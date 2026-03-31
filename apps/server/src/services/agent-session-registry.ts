@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  interactionStateOrder,
   type AgentOutputEntry,
   type AgentOutputStream,
   type AgentSessionRecord,

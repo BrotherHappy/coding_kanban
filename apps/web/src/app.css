@@ -440,7 +440,7 @@ input {
 .agent-grid-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
   gap: 12px;
 }
 
@@ -515,7 +515,6 @@ input {
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 16px;
   flex: 1;
-  overflow: auto;
 }
 
 .grid-empty {
@@ -882,6 +881,7 @@ input {
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.2s;
+  flex-shrink: 0;
 }
 
 .focus-sidebar-card:hover {
@@ -959,9 +959,17 @@ input {
 .terminal-view {
   background: #0e1217;
   height: 100%;
-  overscroll-behavior: contain;
   position: relative;
   overflow: hidden;
+}
+
+.terminal-view-live {
+  overscroll-behavior: contain;
+}
+
+.terminal-view-preview {
+  pointer-events: none;
+  overscroll-behavior: auto;
 }
 
 .terminal-view .xterm,
@@ -972,6 +980,13 @@ input {
 
 .terminal-view-preview .terminal-view-stage {
   position: absolute;
+  pointer-events: none;
+}
+
+.grid-card-terminal .capture-video,
+.grid-card-terminal .capture-placeholder,
+.focus-sidebar-terminal .capture-video,
+.focus-sidebar-terminal .capture-placeholder {
   pointer-events: none;
 }
 

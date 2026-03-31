@@ -123,6 +123,13 @@ function buildTmuxAttachCommand(
   return `tmux attach -t ${shellQuote(tmuxSessionName)}`;
 }
 
+function buildTmuxReconnectCommand(
+  tmuxSessionName: string,
+  workingDirectory: string,
+): string {
+  return `tmux new-session -A -s ${shellQuote(tmuxSessionName)} -c ${formatWorkingDirectory(workingDirectory)}`;
+}
+
 interface AgentSessionRoutesOptions {
   registry: AgentSessionRegistry;
   processRuntimeManager: LocalProcessRuntimeManager;
@@ -600,9 +607,11 @@ return "not_found"
           displayName: session.displayName,
           agentKind: session.agentKind,
           sshTarget: session.sshTarget,
-          remoteCommand: buildTmuxAttachCommand(
-            session.transportRef.tmuxSession,
-            session.transportRef.tmuxPane,
+          remoteCommand: buildInteractiveShellCommand(
+            buildTmuxReconnectCommand(
+              session.transportRef.tmuxSession,
+              session.workingDirectory ?? "~",
+            ),
           ),
           workingDirectory: session.workingDirectory,
           tmuxSessionName: session.transportRef.tmuxSession,
@@ -623,9 +632,9 @@ return "not_found"
         });
       }
       const cmd = session.transportRef?.tmuxSession
-        ? buildTmuxAttachCommand(
+        ? buildTmuxReconnectCommand(
             session.transportRef.tmuxSession,
-            session.transportRef.tmuxPane,
+            session.workingDirectory ?? "~",
           )
         : session.agentSessionId
           ? buildDirectLaunchCommand(
