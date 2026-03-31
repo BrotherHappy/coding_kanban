@@ -241,7 +241,10 @@ export function QuickTmuxConnect({
             workspaceId: "default",
             displayName: nextSessionName,
             agentKind: "shell",
-            command: buildQuickTmuxCommand(nextSessionName, nextWorkingDirectory),
+            command: buildQuickTmuxCommand(
+              nextSessionName,
+              nextWorkingDirectory,
+            ),
             workingDirectory: nextWorkingDirectory,
             tmuxSessionName: nextSessionName,
           })

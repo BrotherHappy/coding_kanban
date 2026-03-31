@@ -41,7 +41,7 @@ export function AgentFocusView({
     function isInTerminal(node: HTMLElement | null): boolean {
       return Boolean(
         node?.closest(".focus-main-terminal") ||
-          node?.classList.contains("xterm-helper-textarea"),
+        node?.classList.contains("xterm-helper-textarea"),
       );
     }
 
