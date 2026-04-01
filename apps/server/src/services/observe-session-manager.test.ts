@@ -55,7 +55,7 @@ test("heartbeat refreshes lastHeartbeatAt", () => {
   assert.equal(updated.outputPreview, "new preview");
 });
 
-test("heartbeat marks observed captures awaiting_input after the screen stays unchanged", async () => {
+test("heartbeat marks observed captures idle after the screen stays unchanged", async () => {
   const registry = new AgentSessionRegistry(20);
   const manager = new ObserveSessionManager(registry);
 
@@ -77,7 +77,7 @@ test("heartbeat marks observed captures awaiting_input after the screen stays un
     screenSignature: "frame-stable",
   } as any);
 
-  assert.equal(updated.interactionState, "awaiting_input");
+  assert.equal(updated.interactionState, "idle");
   assert.equal(updated.stateConfidence, "medium");
 });
 

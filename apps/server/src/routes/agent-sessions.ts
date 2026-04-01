@@ -130,6 +130,12 @@ function buildTmuxReconnectCommand(
   return `tmux new-session -A -s ${shellQuote(tmuxSessionName)} -c ${formatWorkingDirectory(workingDirectory)}`;
 }
 
+function isPtyCapacityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+
+  return /posix_openpt failed|device not configured/i.test(message);
+}
+
 interface AgentSessionRoutesOptions {
   registry: AgentSessionRegistry;
   processRuntimeManager: LocalProcessRuntimeManager;
@@ -302,32 +308,45 @@ export async function registerAgentSessionRoutes(
           registry.remove(existingSession.id);
         }
 
-        const attachedSession = sshTarget
-          ? ptyRuntimeManager.launchRemote({
-              workspaceId: tmuxSession,
-              displayName,
-              agentKind,
-              sshTarget,
-              remoteCommand: buildInteractiveShellCommand(
-                buildTmuxAttachCommand(tmuxSession, tmuxPane),
-              ),
-              workingDirectory,
-              tmuxSessionName: tmuxSession,
-              tmuxPaneId: tmuxPane,
-            })
-          : ptyRuntimeManager.launch({
-              workspaceId: tmuxSession,
-              hostId,
-              displayName,
-              agentKind,
-              command: buildTmuxAttachCommand(tmuxSession, tmuxPane),
-              workingDirectory,
-              tmuxSessionName: tmuxSession,
-              tmuxPaneId: tmuxPane,
-            });
+        try {
+          const attachedSession = sshTarget
+            ? ptyRuntimeManager.launchRemote({
+                workspaceId: tmuxSession,
+                displayName,
+                agentKind,
+                sshTarget,
+                remoteCommand: buildInteractiveShellCommand(
+                  buildTmuxAttachCommand(tmuxSession, tmuxPane),
+                ),
+                workingDirectory,
+                tmuxSessionName: tmuxSession,
+                tmuxPaneId: tmuxPane,
+              })
+            : ptyRuntimeManager.launch({
+                workspaceId: tmuxSession,
+                hostId,
+                displayName,
+                agentKind,
+                command: buildTmuxAttachCommand(tmuxSession, tmuxPane),
+                workingDirectory,
+                tmuxSessionName: tmuxSession,
+                tmuxPaneId: tmuxPane,
+              });
 
-        reply.code(201);
-        return attachedSession;
+          reply.code(201);
+          return attachedSession;
+        } catch (error) {
+          if (!isPtyCapacityError(error)) {
+            throw error;
+          }
+
+          reply.code(503);
+          return {
+            error: "PTY capacity exhausted",
+            message:
+              "PTY 资源已耗尽，无法再附加更多交互式 tmux 会话。请先关闭部分运行中的终端后重试。",
+          };
+        }
       }
 
       const agentSession = registry.upsertByTransportRef(runtimeId, {

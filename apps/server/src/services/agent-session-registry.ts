@@ -14,7 +14,8 @@ import {
 type SnapshotListener = (snapshot: ListAgentSessionsResponse) => void;
 
 const MAX_OUTPUT_ENTRIES = 200;
-const DEFAULT_AWAITING_INPUT_IDLE_MS = 10_000;
+const DEFAULT_IDLE_TRANSITION_MS = 10_000;
+const DEFAULT_SNAPSHOT_THROTTLE_MS = 100;
 const MAX_INFERENCE_WINDOW_CHARS = 4096;
 
 const ANSI_ESCAPE_PATTERN =
@@ -76,13 +77,15 @@ export class AgentSessionRegistry {
   private readonly screenWindows = new Map<string, string>();
   private readonly lastScreenChangedAt = new Map<string, number>();
   private readonly sessionOrder = new Map<string, number>();
-  private readonly awaitingInputTimers = new Map<string, NodeJS.Timeout>();
+  private readonly inactivityTimers = new Map<string, NodeJS.Timeout>();
   private readonly listeners = new Set<SnapshotListener>();
+  private snapshotFlushTimer: NodeJS.Timeout | null = null;
   private activeAgentSessionId: string | null = null;
   private nextSessionOrder = 0;
 
   constructor(
-    private readonly awaitingInputIdleMs = DEFAULT_AWAITING_INPUT_IDLE_MS,
+    private readonly inactivityIdleMs = DEFAULT_IDLE_TRANSITION_MS,
+    private readonly snapshotThrottleMs = DEFAULT_SNAPSHOT_THROTTLE_MS,
   ) {}
 
   list(): ListAgentSessionsResponse {
@@ -157,8 +160,8 @@ export class AgentSessionRegistry {
     this.sessionOrder.set(agentSession.id, this.nextSessionOrder);
     this.nextSessionOrder += 1;
 
-    if (this.shouldUseTimedAwaitingInput(agentSession)) {
-      this.refreshAwaitingInputTimer(agentSession.id);
+    if (this.shouldInferIdleFromInactivity(agentSession)) {
+      this.refreshInactivityTimer(agentSession.id);
     }
 
     if (!this.activeAgentSessionId) {
@@ -229,10 +232,6 @@ export class AgentSessionRegistry {
     const nextSession: AgentSessionRecord = {
       ...agentSession,
       lastHeartbeatAt: now,
-      interactionState:
-        agentSession.interactionState === "awaiting_input"
-          ? "running"
-          : agentSession.interactionState,
       outputPreview: input.input.trim()
         ? `Last input: ${input.input.trim()}`
         : agentSession.outputPreview,
@@ -245,7 +244,7 @@ export class AgentSessionRegistry {
       stream: "system",
       text: `> ${input.input.trim() || "[empty input]"}`,
     });
-    this.emitSnapshot();
+    this.emitSnapshot(false);
 
     return nextSession;
   }
@@ -269,7 +268,7 @@ export class AgentSessionRegistry {
     if (screenChanged) {
       this.screenWindows.set(agentSessionId, nextScreenWindow);
       this.lastScreenChangedAt.set(agentSessionId, Date.now());
-      this.refreshAwaitingInputTimer(agentSessionId);
+      this.refreshInactivityTimer(agentSessionId);
     }
 
     const nextSession: AgentSessionRecord = {
@@ -278,11 +277,11 @@ export class AgentSessionRegistry {
       lastOutputAt: screenChanged ? now : agentSession.lastOutputAt,
       outputPreview: screenChanged ? outputPreview : agentSession.outputPreview,
       interactionState:
-        screenChanged && this.shouldUseTimedAwaitingInput(agentSession)
+        screenChanged && this.shouldInferIdleFromInactivity(agentSession)
           ? "running"
           : agentSession.interactionState,
       stateConfidence:
-        screenChanged && this.shouldUseTimedAwaitingInput(agentSession)
+        screenChanged && this.shouldInferIdleFromInactivity(agentSession)
           ? "medium"
           : agentSession.stateConfidence,
       lastRefreshedAt: now,
@@ -295,7 +294,7 @@ export class AgentSessionRegistry {
       stream,
       text,
     });
-    this.emitSnapshot();
+    this.emitSnapshot(false);
 
     return nextSession;
   }
@@ -332,12 +331,12 @@ export class AgentSessionRegistry {
       agentSession.sourceType === "local-window-capture" ||
       agentSession.controlMode !== "observe";
     const hasBeenStableLongEnough =
-      nowMs - lastChangedAt >= this.awaitingInputIdleMs;
+      nowMs - lastChangedAt >= this.inactivityIdleMs;
 
     return this.updateSession(agentSessionId, {
       interactionState: shouldInferFromStableScreen
         ? hasBeenStableLongEnough
-          ? "awaiting_input"
+          ? "idle"
           : "running"
         : "detached",
       stateConfidence: shouldInferFromStableScreen
@@ -398,7 +397,7 @@ export class AgentSessionRegistry {
       text: exitSummary,
     });
     this.emitSnapshot();
-    this.clearAwaitingInputTimer(agentSessionId);
+    this.clearInactivityTimer(agentSessionId);
 
     return nextSession;
   }
@@ -409,7 +408,7 @@ export class AgentSessionRegistry {
     this.screenWindows.delete(agentSessionId);
     this.lastScreenChangedAt.delete(agentSessionId);
     this.sessionOrder.delete(agentSessionId);
-    this.clearAwaitingInputTimer(agentSessionId);
+    this.clearInactivityTimer(agentSessionId);
     if (this.activeAgentSessionId === agentSessionId) {
       this.activeAgentSessionId = null;
     }
@@ -431,7 +430,29 @@ export class AgentSessionRegistry {
   private getSessionOrder = (agentSessionId: string): number =>
     this.sessionOrder.get(agentSessionId) ?? Number.MAX_SAFE_INTEGER;
 
-  private emitSnapshot(): void {
+  private emitSnapshot(immediate: boolean = true): void {
+    if (!immediate && this.snapshotThrottleMs > 0) {
+      if (this.snapshotFlushTimer) {
+        return;
+      }
+
+      this.snapshotFlushTimer = setTimeout(() => {
+        this.snapshotFlushTimer = null;
+        this.flushSnapshot();
+      }, this.snapshotThrottleMs);
+
+      return;
+    }
+
+    if (this.snapshotFlushTimer) {
+      clearTimeout(this.snapshotFlushTimer);
+      this.snapshotFlushTimer = null;
+    }
+
+    this.flushSnapshot();
+  }
+
+  private flushSnapshot(): void {
     const snapshot = this.list();
 
     for (const listener of this.listeners) {
@@ -443,8 +464,8 @@ export class AgentSessionRegistry {
     const agentSession = this.get(agentSessionId);
     this.lastScreenChangedAt.set(agentSessionId, Date.now());
 
-    if (this.shouldUseTimedAwaitingInput(agentSession)) {
-      this.refreshAwaitingInputTimer(agentSessionId);
+    if (this.shouldInferIdleFromInactivity(agentSession)) {
+      this.refreshInactivityTimer(agentSessionId);
     }
 
     if (agentSession.interactionState === "exited") {
@@ -458,7 +479,7 @@ export class AgentSessionRegistry {
     });
   }
 
-  private shouldUseTimedAwaitingInput(
+  private shouldInferIdleFromInactivity(
     agentSession: AgentSessionRecord,
   ): boolean {
     return (
@@ -468,39 +489,39 @@ export class AgentSessionRegistry {
     );
   }
 
-  private refreshAwaitingInputTimer(agentSessionId: string): void {
-    this.clearAwaitingInputTimer(agentSessionId);
+  private refreshInactivityTimer(agentSessionId: string): void {
+    this.clearInactivityTimer(agentSessionId);
 
     const timeout = setTimeout(() => {
       const agentSession = this.sessions.get(agentSessionId);
-      if (!agentSession || !this.shouldUseTimedAwaitingInput(agentSession)) {
+      if (!agentSession || !this.shouldInferIdleFromInactivity(agentSession)) {
         return;
       }
 
       const lastChangedAt = this.lastScreenChangedAt.get(agentSessionId) ?? 0;
-      if (Date.now() - lastChangedAt < this.awaitingInputIdleMs) {
+      if (Date.now() - lastChangedAt < this.inactivityIdleMs) {
         return;
       }
 
-      if (agentSession.interactionState === "awaiting_input") {
+      if (agentSession.interactionState === "idle") {
         return;
       }
 
       this.updateSession(agentSessionId, {
-        interactionState: "awaiting_input",
+        interactionState: "idle",
         stateConfidence: "medium",
         lastHeartbeatAt: new Date().toISOString(),
       });
-    }, this.awaitingInputIdleMs);
+    }, this.inactivityIdleMs);
 
-    this.awaitingInputTimers.set(agentSessionId, timeout);
+    this.inactivityTimers.set(agentSessionId, timeout);
   }
 
-  private clearAwaitingInputTimer(agentSessionId: string): void {
-    const timeout = this.awaitingInputTimers.get(agentSessionId);
+  private clearInactivityTimer(agentSessionId: string): void {
+    const timeout = this.inactivityTimers.get(agentSessionId);
     if (timeout) {
       clearTimeout(timeout);
-      this.awaitingInputTimers.delete(agentSessionId);
+      this.inactivityTimers.delete(agentSessionId);
     }
   }
 }

@@ -22,7 +22,6 @@ interface AgentGridCardProps {
 const stateLabels: Record<string, string> = {
   running: "运行中",
   idle: "空闲",
-  awaiting_input: "等待输入",
   detached: "已分离",
   exited: "已退出",
 };
@@ -30,7 +29,6 @@ const stateLabels: Record<string, string> = {
 const stateColors: Record<string, string> = {
   running: "card-running",
   idle: "card-idle",
-  awaiting_input: "card-awaiting",
   detached: "card-detached",
   exited: "card-exited",
 };

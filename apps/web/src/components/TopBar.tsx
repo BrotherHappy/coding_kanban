@@ -38,8 +38,8 @@ export function TopBar({
   const runningCount = sessions.filter(
     (s) => s.interactionState === "running",
   ).length;
-  const awaitingCount = sessions.filter(
-    (s) => s.interactionState === "awaiting_input",
+  const idleCount = sessions.filter(
+    (s) => s.interactionState === "idle",
   ).length;
   const totalCount = sessions.length;
 
@@ -107,10 +107,8 @@ export function TopBar({
             🟢 {runningCount} 运行中
           </span>
         )}
-        {awaitingCount > 0 && (
-          <span className="stat-item stat-awaiting">
-            🟡 {awaitingCount} 等待输入
-          </span>
+        {idleCount > 0 && (
+          <span className="stat-item stat-idle">🔵 {idleCount} 空闲</span>
         )}
         <button
           className="top-bar-collapse-btn"

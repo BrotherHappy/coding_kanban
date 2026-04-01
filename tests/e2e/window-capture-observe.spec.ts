@@ -108,7 +108,7 @@ test('window capture: 点击添加后创建 capture session', async ({
   }
 });
 
-test('window capture: 静止画面会从运行中切换为等待输入', async ({
+test('window capture: 静止画面会从运行中切换为空闲', async ({
   page,
   request,
 }) => {
@@ -132,10 +132,8 @@ test('window capture: 静止画面会从运行中切换为等待输入', async (
 
     await page.waitForTimeout(12_000);
 
-    await expect(captureCard.locator('.grid-card-badge')).toHaveText(
-      '等待输入',
-    );
-    await expect(captureCard).toHaveClass(/card-awaiting/);
+    await expect(captureCard.locator('.grid-card-badge')).toHaveText('空闲');
+    await expect(captureCard).toHaveClass(/card-idle/);
   } finally {
     await cleanupCaptureSessions(request);
   }

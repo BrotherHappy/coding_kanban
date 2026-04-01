@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { buildServer } from "../app.js";
+import { PtyRuntimeManager } from "../services/pty-runtime-manager.js";
 import { resolveTmuxBinary } from "../services/runtime-compat.js";
 
 const TMUX_BINARY = resolveTmuxBinary();
@@ -199,6 +200,66 @@ test("POST /api/agent-discovery/tmux/add can attach to a discovered tmux pane wi
       }).catch(() => {});
     }
 
+    await app.close();
+    killTmuxSession(sessionName);
+  }
+});
+
+test("POST /api/agent-discovery/tmux/add returns a clear error when PTY capacity is exhausted", async () => {
+  const originalLaunch = PtyRuntimeManager.prototype.launch;
+
+  PtyRuntimeManager.prototype.launch = function mockedLaunch() {
+    throw new Error("posix_openpt failed: Device not configured");
+  } as typeof PtyRuntimeManager.prototype.launch;
+
+  const { app } = buildServer();
+  const sessionName = `tmux-add-capacity-${Date.now()}`;
+
+  killTmuxSession(sessionName);
+
+  runTmux([
+    "new-session",
+    "-d",
+    "-s",
+    sessionName,
+    "-c",
+    process.cwd(),
+    "sh -lc 'sleep 30'",
+  ]);
+
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const address = app.server.address();
+
+  assert.ok(address && typeof address === "object");
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const response = await fetch(`${baseUrl}/api/agent-discovery/tmux/add`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        tmuxSession: sessionName,
+        displayName: sessionName,
+        workingDirectory: process.cwd(),
+        agentKind: "shell",
+        interactionState: "running",
+      }),
+    });
+
+    assert.equal(response.status, 503);
+
+    const payload = (await response.json()) as {
+      error?: string;
+      message?: string;
+    };
+
+    assert.equal(payload.error, "PTY capacity exhausted");
+    assert.match(payload.message ?? "", /pty|资源|capacity/i);
+  } finally {
+    PtyRuntimeManager.prototype.launch = originalLaunch;
     await app.close();
     killTmuxSession(sessionName);
   }

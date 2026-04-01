@@ -6,12 +6,7 @@ export type AgentSourceType =
 
 export type ConnectionState = "online" | "degraded" | "offline";
 
-export type InteractionState =
-  | "running"
-  | "idle"
-  | "awaiting_input"
-  | "detached"
-  | "exited";
+export type InteractionState = "running" | "idle" | "detached" | "exited";
 
 export type StateConfidence = "high" | "medium" | "low";
 export type AgentOutputStream = "stdout" | "stderr" | "system";
@@ -213,7 +208,6 @@ export interface ScanDirectoryResponse {
 }
 
 export const interactionStateOrder: InteractionState[] = [
-  "awaiting_input",
   "running",
   "idle",
   "detached",

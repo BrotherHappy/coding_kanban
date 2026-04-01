@@ -23,8 +23,8 @@ export function WorkspaceTree({ sessions }: WorkspaceTreeProps) {
       <div className="tree-list">
         {Object.entries(groupedSessions).map(([key, agentSessions]) => {
           const [hostId, workspaceId] = key.split("::");
-          const awaitingInputCount = agentSessions.filter(
-            ({ interactionState }) => interactionState === "awaiting_input",
+          const idleCount = agentSessions.filter(
+            ({ interactionState }) => interactionState === "idle",
           ).length;
 
           return (
@@ -34,8 +34,7 @@ export function WorkspaceTree({ sessions }: WorkspaceTreeProps) {
                 <span>{hostId}</span>
               </header>
               <p>
-                {agentSessions.length} sessions · {awaitingInputCount} awaiting
-                input
+                {agentSessions.length} 个会话 · {idleCount} 空闲
               </p>
             </section>
           );

@@ -5,7 +5,6 @@ interface StatusHintProps {
 }
 
 const hintMessages: Record<string, string> = {
-  awaiting_input: "⏳ Agent 正在等待你的输入",
   running: "⚡ Agent 正在执行中",
   idle: "💤 Agent 当前空闲",
   detached: "🔌 会话已分离",

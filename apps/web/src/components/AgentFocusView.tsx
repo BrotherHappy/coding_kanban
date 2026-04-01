@@ -21,7 +21,6 @@ interface AgentFocusViewProps {
 const stateLabels: Record<string, string> = {
   running: "运行中",
   idle: "空闲",
-  awaiting_input: "等待输入",
   detached: "已分离",
   exited: "已退出",
 };

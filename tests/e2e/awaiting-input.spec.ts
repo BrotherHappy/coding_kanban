@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('terminal session shows awaiting-input state in yellow', async ({ page }) => {
+test('terminal session shows idle state after input wait timeout', async ({ page }) => {
   const displayName = `E2E Awaiting ${Date.now()}`;
 
   try {
@@ -37,9 +37,9 @@ test('terminal session shows awaiting-input state in yellow', async ({ page }) =
 
     await page.waitForTimeout(11_000);
 
-    await expect(card.locator('.grid-card-badge')).toHaveText('等待输入');
-    await expect(card).toHaveClass(/card-awaiting/);
-    await expect(page.locator('.stat-awaiting')).toContainText('等待输入');
+    await expect(card.locator('.grid-card-badge')).toHaveText('空闲');
+    await expect(card).toHaveClass(/card-idle/);
+    await expect(page.locator('.stat-awaiting')).toHaveCount(0);
   } finally {
     await page
       .evaluate(async (nextDisplayName) => {

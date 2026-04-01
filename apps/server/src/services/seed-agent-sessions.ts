@@ -8,7 +8,7 @@ export function seedAgentSessions(registry: AgentSessionRegistry): void {
     agentKind: "codex",
     displayName: "Local Codex / checkout-redesign",
     workingDirectory: "/Users/hx/projects/checkout-redesign",
-    interactionState: "awaiting_input",
+    interactionState: "idle",
     connectionState: "online",
     stateConfidence: "high",
     outputPreview: "Ready for your next instruction.",

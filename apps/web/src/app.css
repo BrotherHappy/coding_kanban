@@ -128,8 +128,8 @@ input {
   color: #86efac;
 }
 
-.stat-awaiting {
-  color: #ffc36a;
+.stat-idle {
+  color: #93b4f5;
 }
 
 /* ===== Main Layout ===== */
@@ -554,11 +554,6 @@ input {
   border-color: rgba(39, 174, 96, 0.4);
 }
 
-.grid-card.card-awaiting {
-  border-color: rgba(255, 152, 0, 0.5);
-  animation: pulse-awaiting 2s ease-in-out infinite;
-}
-
 .grid-card.card-idle {
   border-color: rgba(100, 149, 237, 0.3);
 }
@@ -570,16 +565,6 @@ input {
 .grid-card.card-exited {
   border-color: rgba(181, 55, 55, 0.3);
   opacity: 0.7;
-}
-
-@keyframes pulse-awaiting {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0);
-  }
-  50% {
-    box-shadow: 0 0 16px 2px rgba(255, 152, 0, 0.25);
-  }
 }
 
 .grid-card-header {
@@ -631,11 +616,6 @@ input {
 .badge-running {
   background: rgba(39, 174, 96, 0.2);
   color: #86efac;
-}
-
-.badge-awaiting_input {
-  background: rgba(255, 152, 0, 0.2);
-  color: #ffc36a;
 }
 
 .badge-idle {
@@ -888,10 +868,6 @@ input {
   border-color: rgba(255, 152, 0, 0.4);
 }
 
-.focus-sidebar-card.card-awaiting_input {
-  border-color: rgba(255, 152, 0, 0.4);
-}
-
 .focus-sidebar-card-header {
   display: flex;
   align-items: center;
@@ -920,11 +896,6 @@ input {
   font-size: 12px;
   text-align: center;
   border-radius: 0 0 8px 8px;
-}
-
-.hint-awaiting_input {
-  background: rgba(255, 152, 0, 0.15);
-  color: #ffc36a;
 }
 
 .hint-running {

@@ -18,7 +18,7 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("marks direct sessions awaiting_input after screen stays unchanged", async () => {
+test("marks direct sessions idle after screen stays unchanged", async () => {
   const registry = new AgentSessionRegistry(20);
   const session = createSession(registry);
 
@@ -29,11 +29,32 @@ test("marks direct sessions awaiting_input after screen stays unchanged", async 
 
   await wait(60);
 
-  assert.equal(registry.get(session.id).interactionState, "awaiting_input");
+  assert.equal(registry.get(session.id).interactionState, "idle");
   assert.equal(registry.get(session.id).stateConfidence, "medium");
 });
 
-test("user input resets inactivity timer and later returns to awaiting_input", async () => {
+test("rapid output coalesces snapshot broadcasts", async () => {
+  const registry = new AgentSessionRegistry(1_000);
+  const snapshots: string[] = [];
+
+  registry.subscribe((snapshot) => {
+    snapshots.push(snapshot.updatedAt);
+  });
+
+  const session = createSession(registry);
+
+  registry.appendOutput(session.id, "frame-1\n", "stdout");
+  registry.appendOutput(session.id, "frame-2\n", "stdout");
+  registry.appendOutput(session.id, "frame-3\n", "stdout");
+
+  assert.equal(snapshots.length, 2);
+
+  await wait(150);
+
+  assert.equal(snapshots.length, 3);
+});
+
+test("user input resets inactivity timer and later returns to idle", async () => {
   const registry = new AgentSessionRegistry(25);
   const session = createSession(registry);
 
@@ -47,7 +68,7 @@ test("user input resets inactivity timer and later returns to awaiting_input", a
   assert.equal(registry.get(session.id).interactionState, "running");
 
   await wait(40);
-  assert.equal(registry.get(session.id).interactionState, "awaiting_input");
+  assert.equal(registry.get(session.id).interactionState, "idle");
 });
 
 test("repeated identical terminal redraws do not keep sessions running", async () => {
@@ -60,7 +81,7 @@ test("repeated identical terminal redraws do not keep sessions running", async (
   registry.appendOutput(session.id, "\u001b[2K\rprompt> ", "stdout");
   await wait(40);
 
-  assert.equal(registry.get(session.id).interactionState, "awaiting_input");
+  assert.equal(registry.get(session.id).interactionState, "idle");
 });
 
 test("identical redraws do not reorder sessions in the board", async () => {
@@ -139,7 +160,7 @@ test("tmux observe-only sessions stay detached even when screen is unchanged", a
   assert.equal(updated.stateConfidence, "high");
 });
 
-test("local-window-capture sessions enter awaiting_input after the captured screen stays unchanged", async () => {
+test("local-window-capture sessions enter idle after the captured screen stays unchanged", async () => {
   const registry = new AgentSessionRegistry(20);
   const session = registry.register({
     workspaceId: "local-vscode-window-observe",
@@ -157,6 +178,6 @@ test("local-window-capture sessions enter awaiting_input after the captured scre
   await wait(60);
 
   const updated = registry.syncCapturedScreen(session.id, "stable frame");
-  assert.equal(updated.interactionState, "awaiting_input");
+  assert.equal(updated.interactionState, "idle");
   assert.equal(updated.stateConfidence, "medium");
 });
