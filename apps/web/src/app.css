@@ -436,6 +436,22 @@ input {
   padding: 16px;
 }
 
+.main-content-stage {
+  position: relative;
+  min-height: 100%;
+}
+
+.main-content-view {
+  min-height: 100%;
+}
+
+.main-content-view.is-hidden {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* ===== Agent Grid Container ===== */
 .agent-grid-container {
   display: flex;

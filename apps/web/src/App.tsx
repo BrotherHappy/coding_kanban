@@ -403,7 +403,6 @@ export default function App() {
 
   const handleExitFocus = useCallback(() => {
     setViewMode("grid");
-    setFocusedId(null);
   }, []);
 
   function handleSwitchFocus(id: string) {
@@ -638,36 +637,54 @@ export default function App() {
             <div className="grid-empty">
               <p>正在加载...</p>
             </div>
-          ) : viewMode === "focus" && focusedSession ? (
-            <AgentFocusView
-              focusedSession={focusedSession}
-              sessions={sessions}
-              onSwitchFocus={handleSwitchFocus}
-              onExit={handleExitFocus}
-              onReconnect={handleReconnectSession}
-              onRename={handleRenameSession}
-              captureStream={getCaptureStreamForSession(focusedSession.id)}
-              onStopCapture={handleStopCapture}
-              getCaptureStream={getCaptureStreamForSession}
-            />
           ) : (
-            <AgentGrid
-              sessions={filteredSessions}
-              allSessions={visibleSessions}
-              filters={filters}
-              onFiltersChange={setFilters}
-              onFocusSession={handleFocusSession}
-              onDeleteSession={handleDeleteSession}
-              onReconnectSession={handleReconnectSession}
-              onRenameSession={handleRenameSession}
-              onHideSession={handleHideSession}
-              onCopyConnectCommand={handleCopyConnectCommand}
-              onKillTmux={handleKillTmux}
-              getCaptureStream={getCaptureStreamForSession}
-              onStopCapture={handleStopCapture}
-              hiddenCount={hiddenSessions.length}
-              onShowHidden={() => setShowHiddenDrawer(true)}
-            />
+            <div className="main-content-stage">
+              {focusedSession ? (
+                <div
+                  className={`main-content-view${
+                    viewMode === "focus" ? "" : " is-hidden"
+                  }`}
+                  aria-hidden={viewMode !== "focus"}
+                >
+                  <AgentFocusView
+                    focusedSession={focusedSession}
+                    sessions={sessions}
+                    active={viewMode === "focus"}
+                    onSwitchFocus={handleSwitchFocus}
+                    onExit={handleExitFocus}
+                    onReconnect={handleReconnectSession}
+                    onRename={handleRenameSession}
+                    captureStream={getCaptureStreamForSession(
+                      focusedSession.id,
+                    )}
+                    onStopCapture={handleStopCapture}
+                    getCaptureStream={getCaptureStreamForSession}
+                  />
+                </div>
+              ) : null}
+
+              {viewMode === "focus" && focusedSession ? null : (
+                <div className="main-content-view">
+                  <AgentGrid
+                    sessions={filteredSessions}
+                    allSessions={visibleSessions}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    onFocusSession={handleFocusSession}
+                    onDeleteSession={handleDeleteSession}
+                    onReconnectSession={handleReconnectSession}
+                    onRenameSession={handleRenameSession}
+                    onHideSession={handleHideSession}
+                    onCopyConnectCommand={handleCopyConnectCommand}
+                    onKillTmux={handleKillTmux}
+                    getCaptureStream={getCaptureStreamForSession}
+                    onStopCapture={handleStopCapture}
+                    hiddenCount={hiddenSessions.length}
+                    onShowHidden={() => setShowHiddenDrawer(true)}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

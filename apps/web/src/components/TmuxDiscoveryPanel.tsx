@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type {
   AgentSessionRecord,
+  DiscoverTmuxSessionsResponse,
   DiscoverTmuxInput,
   ScanResult,
 } from "@agent-orchestrator/shared";
@@ -13,7 +14,59 @@ import type { SelectedHost } from "./HostDropdown";
 
 interface TmuxItem {
   session: AgentSessionRecord;
-  existingId?: string;
+}
+
+const TMUX_AUTO_SCAN_CACHE_MS = 1_000;
+
+const recentTmuxScanResults = new Map<
+  string,
+  {
+    response: DiscoverTmuxSessionsResponse;
+    cachedAt: number;
+  }
+>();
+
+const inFlightTmuxScans = new Map<
+  string,
+  Promise<DiscoverTmuxSessionsResponse>
+>();
+
+function buildScanBody(host: SelectedHost): DiscoverTmuxInput {
+  return host.type === "ssh" ? { sshTarget: host.preset } : {};
+}
+
+async function requestTmuxScan(
+  host: SelectedHost,
+  hostKey: string,
+  forceRefresh: boolean,
+): Promise<DiscoverTmuxSessionsResponse> {
+  if (!forceRefresh) {
+    const cached = recentTmuxScanResults.get(hostKey);
+    if (cached && Date.now() - cached.cachedAt < TMUX_AUTO_SCAN_CACHE_MS) {
+      return cached.response;
+    }
+
+    const inFlight = inFlightTmuxScans.get(hostKey);
+    if (inFlight) {
+      return inFlight;
+    }
+  }
+
+  const request = discoverTmuxSessions(buildScanBody(host))
+    .then((response) => {
+      recentTmuxScanResults.set(hostKey, {
+        response,
+        cachedAt: Date.now(),
+      });
+      return response;
+    })
+    .finally(() => {
+      inFlightTmuxScans.delete(hostKey);
+    });
+
+  inFlightTmuxScans.set(hostKey, request);
+
+  return request;
 }
 
 interface TmuxDiscoveryPanelProps {
@@ -36,9 +89,20 @@ export function TmuxDiscoveryPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const hostKey =
+    host.type === "ssh"
+      ? `${host.preset.host}:${host.preset.port ?? 22}:${host.preset.username ?? ""}`
+      : "local";
+
   useEffect(() => {
-    scan();
-  }, [host, sessions]);
+    let cancelled = false;
+
+    void scan(false, () => cancelled);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostKey]);
 
   function toScanResult(session: AgentSessionRecord): ScanResult {
     return {
@@ -52,32 +116,46 @@ export function TmuxDiscoveryPanel({
     };
   }
 
-  async function scan() {
+  async function scan(
+    forceRefresh = false,
+    isCancelled: () => boolean = () => false,
+  ) {
     setLoading(true);
     setError(null);
     try {
-      const body: DiscoverTmuxInput =
-        host.type === "ssh" ? { sshTarget: host.preset } : {};
-      const res = await discoverTmuxSessions(body);
+      const res = await requestTmuxScan(host, hostKey, forceRefresh);
+
+      if (isCancelled()) {
+        return;
+      }
+
       if (res.unavailable) {
         setError("tmux 不可用或未安装");
         setItems([]);
         return;
       }
-      const mapped: TmuxItem[] = res.items.map((s) => {
-        const existing = findExistingSession(toScanResult(s), sessions);
-        return { session: s, existingId: existing?.id };
-      });
+      const mapped: TmuxItem[] = res.items.map((session) => ({ session }));
       setItems(mapped);
       setSelected(new Set());
     } catch (err) {
+      if (isCancelled()) {
+        return;
+      }
+
       setError(err instanceof Error ? err.message : "扫描失败");
     } finally {
-      setLoading(false);
+      if (!isCancelled()) {
+        setLoading(false);
+      }
     }
   }
 
-  const filtered = items.filter((item) => {
+  const itemsWithExisting = items.map((item) => ({
+    ...item,
+    existingId: findExistingSession(toScanResult(item.session), sessions)?.id,
+  }));
+
+  const filtered = itemsWithExisting.filter((item) => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const name = (
@@ -170,7 +248,9 @@ export function TmuxDiscoveryPanel({
         </button>
         <button
           className="discovery-refresh-btn"
-          onClick={scan}
+          onClick={() => {
+            void scan(true);
+          }}
           disabled={loading}
         >
           {loading ? "扫描中..." : "刷新"}

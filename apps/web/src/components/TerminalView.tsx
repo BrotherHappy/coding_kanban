@@ -11,6 +11,8 @@ interface TerminalViewProps {
   agentSessionId: string;
   interactive?: boolean;
   suspended?: boolean;
+  forceTmuxMouseCapture?: boolean;
+  active?: boolean;
 }
 
 type TerminalContainer = HTMLDivElement & {
@@ -35,6 +37,42 @@ interface TerminalGeometry {
   height: number;
 }
 
+interface PendingMouseReplay {
+  clientX: number;
+  clientY: number;
+  button: number;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}
+
+interface XtermInternalCore {
+  coreMouseService?: {
+    triggerMouseEvent: (event: {
+      col: number;
+      row: number;
+      x: number;
+      y: number;
+      button: number;
+      action: 0 | 1;
+      ctrl: boolean;
+      alt: boolean;
+      shift: boolean;
+    }) => boolean;
+  };
+  screenElement?: HTMLElement;
+  _renderService?: {
+    dimensions?: {
+      css?: {
+        cell?: {
+          width?: number;
+          height?: number;
+        };
+      };
+    };
+  };
+}
+
 const DEFAULT_PREVIEW_GEOMETRY: TerminalGeometry = {
   cols: 120,
   rows: 30,
@@ -45,10 +83,36 @@ const DEFAULT_PREVIEW_GEOMETRY: TerminalGeometry = {
 const previewGeometryCache = new Map<string, TerminalGeometry>();
 const terminalInputOwners = new Map<string, TerminalInputOwner>();
 
+function encodeSgrMouseFrame(options: {
+  button: number;
+  col: number;
+  row: number;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  release?: boolean;
+}): string {
+  let code = options.button;
+
+  if (options.shiftKey) {
+    code += 4;
+  }
+  if (options.altKey) {
+    code += 8;
+  }
+  if (options.ctrlKey) {
+    code += 16;
+  }
+
+  return `\u001b[<${code};${options.col + 1};${options.row + 1}${options.release ? "m" : "M"}`;
+}
+
 export function TerminalView({
   agentSessionId,
   interactive = true,
   suspended = false,
+  forceTmuxMouseCapture = false,
+  active = true,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -56,6 +120,26 @@ export function TerminalView({
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const activeRef = useRef(active);
+  const scheduleFitRef = useRef<(() => void) | null>(null);
+  const flushResizeRef = useRef<(() => void) | null>(null);
+  const scheduleFocusRef = useRef<((unlockInput?: boolean) => void) | null>(
+    null,
+  );
+  const flushPendingMouseReplayRef = useRef<(() => void) | null>(null);
+
+  activeRef.current = active;
+
+  useEffect(() => {
+    if (!interactive || !active) {
+      return;
+    }
+
+    scheduleFitRef.current?.();
+    flushResizeRef.current?.();
+    scheduleFocusRef.current?.(true);
+    flushPendingMouseReplayRef.current?.();
+  }, [active, interactive]);
 
   useEffect(() => {
     if (suspended) {
@@ -73,11 +157,12 @@ export function TerminalView({
     const isPreview = !interactive;
     const ownerToken = Symbol(agentSessionId);
     const ownerPriority = interactive ? 2 : 1;
-    let handleMouseDownCapture: (() => void) | null = null;
-    let handlePointerDownCapture: (() => void) | null = null;
+    let handleMouseDownCapture: ((event: MouseEvent) => void) | null = null;
+    let handlePointerDownCapture: ((event: PointerEvent) => void) | null = null;
     let handleWindowFocus: (() => void) | null = null;
     let disposed = false;
     let closeAfterOpen = false;
+    let pendingMouseReplay: PendingMouseReplay | null = null;
 
     const ensureInputOwner = () => {
       const currentOwner = terminalInputOwners.get(agentSessionId);
@@ -163,7 +248,7 @@ export function TerminalView({
     fitRef.current = fitAddon;
 
     const focusInteractiveTerminal = (unlockInput = false) => {
-      if (!interactive) {
+      if (!interactive || !activeRef.current) {
         return;
       }
 
@@ -174,8 +259,133 @@ export function TerminalView({
       term.focus();
     };
 
+    const currentMouseTrackingMode = () =>
+      (
+        term as Terminal & {
+          modes?: {
+            mouseTrackingMode?: string;
+          };
+        }
+      ).modes?.mouseTrackingMode ?? "none";
+
+    const queuePendingMouseReplay = (event: MouseEvent | PointerEvent) => {
+      if (!interactive || currentMouseTrackingMode() !== "none") {
+        return;
+      }
+
+      pendingMouseReplay = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        button: event.button,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      };
+    };
+
+    const flushPendingMouseReplay = () => {
+      if (!interactive || !pendingMouseReplay) {
+        return;
+      }
+
+      const core = (
+        term as Terminal & {
+          _core?: XtermInternalCore;
+        }
+      )._core;
+      const screen = core?.screenElement;
+      const cellWidth = core?._renderService?.dimensions?.css?.cell?.width ?? 0;
+      const cellHeight =
+        core?._renderService?.dimensions?.css?.cell?.height ?? 0;
+
+      if (
+        !(screen instanceof HTMLElement) ||
+        !core?.coreMouseService ||
+        cellWidth <= 0 ||
+        cellHeight <= 0
+      ) {
+        return;
+      }
+
+      const replay = pendingMouseReplay;
+      const rect = screen.getBoundingClientRect();
+      const x = replay.clientX - rect.left;
+      const y = replay.clientY - rect.top;
+      const col = Math.max(
+        0,
+        Math.min(term.cols - 1, Math.floor(x / cellWidth)),
+      );
+      const row = Math.max(
+        0,
+        Math.min(term.rows - 1, Math.floor(y / cellHeight)),
+      );
+
+      if (
+        currentMouseTrackingMode() === "none" &&
+        forceTmuxMouseCapture &&
+        ws?.readyState === WebSocket.OPEN &&
+        ensureInputOwner()
+      ) {
+        ws.send(
+          encodeSgrMouseFrame({
+            button: replay.button,
+            col,
+            row,
+            ctrlKey: replay.ctrlKey,
+            altKey: replay.altKey,
+            shiftKey: replay.shiftKey,
+          }),
+        );
+        ws.send(
+          encodeSgrMouseFrame({
+            button: replay.button,
+            col,
+            row,
+            ctrlKey: replay.ctrlKey,
+            altKey: replay.altKey,
+            shiftKey: replay.shiftKey,
+            release: true,
+          }),
+        );
+        pendingMouseReplay = null;
+        return;
+      }
+
+      if (currentMouseTrackingMode() === "none") {
+        return;
+      }
+
+      const triggerMouseEvent = core.coreMouseService.triggerMouseEvent.bind(
+        core.coreMouseService,
+      );
+
+      const mouseEventBase = {
+        col,
+        row,
+        x,
+        y,
+        button: replay.button,
+        ctrl: replay.ctrlKey,
+        alt: replay.altKey,
+        shift: replay.shiftKey,
+      };
+
+      const didSendDown = triggerMouseEvent({
+        ...mouseEventBase,
+        action: 1,
+      });
+      const didSendUp = triggerMouseEvent({
+        ...mouseEventBase,
+        action: 0,
+      });
+
+      if (didSendDown || didSendUp) {
+        pendingMouseReplay = null;
+      }
+    };
+
     const scheduleFocusInteractiveTerminal = (unlockInput = false) => {
-      if (!interactive) {
+      if (!interactive || !activeRef.current) {
         return;
       }
 
@@ -233,6 +443,9 @@ export function TerminalView({
         flushResize();
         scheduleFit();
         scheduleFocusInteractiveTerminal();
+        flushPendingMouseReplay();
+        timeoutIds.push(window.setTimeout(flushPendingMouseReplay, 0));
+        timeoutIds.push(window.setTimeout(flushPendingMouseReplay, 32));
       };
 
       ws.onclose = () => {
@@ -245,7 +458,7 @@ export function TerminalView({
     }, 0);
 
     const flushResize = () => {
-      if (isPreview) {
+      if (isPreview || (interactive && !activeRef.current)) {
         return;
       }
 
@@ -277,6 +490,10 @@ export function TerminalView({
     };
 
     const scheduleFit = () => {
+      if (interactive && !activeRef.current) {
+        return;
+      }
+
       const frameId = window.requestAnimationFrame(() => {
         fitTerminal();
 
@@ -291,6 +508,11 @@ export function TerminalView({
       timeoutIds.push(window.setTimeout(fitTerminal, 96));
     };
 
+    scheduleFitRef.current = scheduleFit;
+    flushResizeRef.current = flushResize;
+    scheduleFocusRef.current = scheduleFocusInteractiveTerminal;
+    flushPendingMouseReplayRef.current = flushPendingMouseReplay;
+
     const enableTerminalInput = () => {
       if (replayComplete) {
         return;
@@ -299,6 +521,7 @@ export function TerminalView({
       replayComplete = true;
       term.options.disableStdin = false;
       scheduleFocusInteractiveTerminal();
+      flushPendingMouseReplay();
     };
 
     const handleTerminalFrame = (payload: string) => {
@@ -307,11 +530,13 @@ export function TerminalView({
         if (parsed.__agentOrchestrator !== "terminal-control") {
           enableTerminalInput();
           term.write(payload);
+          flushPendingMouseReplay();
           return;
         }
 
         if (parsed.event === "replay" && typeof parsed.data === "string") {
           term.write(parsed.data);
+          flushPendingMouseReplay();
           return;
         }
 
@@ -322,6 +547,7 @@ export function TerminalView({
       } catch {
         enableTerminalInput();
         term.write(payload);
+        flushPendingMouseReplay();
       }
     };
 
@@ -359,12 +585,18 @@ export function TerminalView({
         return true;
       });
 
-      handlePointerDownCapture = () => {
+      handlePointerDownCapture = (event) => {
+        queuePendingMouseReplay(event);
         focusInteractiveTerminal(true);
+        flushPendingMouseReplay();
       };
 
-      handleMouseDownCapture = () => {
+      handleMouseDownCapture = (event) => {
+        if (!pendingMouseReplay) {
+          queuePendingMouseReplay(event);
+        }
         focusInteractiveTerminal(true);
+        flushPendingMouseReplay();
       };
 
       handleWindowFocus = () => {
@@ -379,9 +611,12 @@ export function TerminalView({
 
     term.onResize(({ cols, rows }) => {
       if (!isPreview) {
-        cachePreviewGeometry(cols, rows);
-        pendingResizeRef.current = { cols, rows };
-        flushResize();
+        if (activeRef.current) {
+          cachePreviewGeometry(cols, rows);
+          pendingResizeRef.current = { cols, rows };
+          flushResize();
+          flushPendingMouseReplay();
+        }
       }
     });
 
@@ -449,8 +684,12 @@ export function TerminalView({
       wsRef.current = null;
       fitRef.current = null;
       pendingResizeRef.current = null;
+      scheduleFitRef.current = null;
+      flushResizeRef.current = null;
+      scheduleFocusRef.current = null;
+      flushPendingMouseReplayRef.current = null;
     };
-  }, [agentSessionId, interactive, suspended]);
+  }, [agentSessionId, forceTmuxMouseCapture, interactive, suspended]);
 
   return (
     <div

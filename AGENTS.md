@@ -86,6 +86,10 @@ If workspace filters or script names change, update this file in the same change
 - Add integration tests for session registration, active-agent switching, stdin routing, and discovery flows.
 - For frontend behavior, cover board ordering, active-agent indicators, and state badges with component or integration tests.
 - Prefer testing the session orchestration layer rather than brittle transport implementation details.
+- When testing, if possible, try to use Playwright for real browser scenario testing.
+- 如果一个问题可能要端到端才会发生或者因此用户频繁操作，你需要用浏览器做端到端测试，在修复完之后补充这个端到端测试到tests/e2e
+
+
 
 ## Security & Config Tips
 

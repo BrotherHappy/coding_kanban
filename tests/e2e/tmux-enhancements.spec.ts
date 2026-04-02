@@ -672,7 +672,6 @@ test('browser: tmux 终端会转发鼠标二进制事件', async ({ page, reques
     );
 
     await screen.click({ position: { x: 80, y: 40 } });
-    await page.mouse.wheel(0, -300);
 
     await expect
       .poll(async () =>
@@ -686,6 +685,30 @@ test('browser: tmux 终端会转发鼠标二进制事件', async ({ page, reques
         ),
       )
       .toBeGreaterThan(before);
+
+    const afterClick = await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __terminalMouseFrames?: string[];
+          }
+        ).__terminalMouseFrames?.length ?? 0,
+    );
+
+    await page.mouse.wheel(0, -300);
+
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __terminalMouseFrames?: string[];
+              }
+            ).__terminalMouseFrames?.length ?? 0,
+        ),
+      )
+      .toBeGreaterThan(afterClick);
 
     const frames = await page.evaluate(
       () =>
@@ -703,6 +726,7 @@ test('browser: tmux 终端会转发鼠标二进制事件', async ({ page, reques
           frame.includes('[M'),
       ),
     ).toBeTruthy();
+
   } finally {
     if (launchedSessionId) {
       await request.delete(
@@ -802,6 +826,221 @@ test('browser: 切回浏览器窗口后会恢复 tmux 输入焦点', async ({
         ),
       )
       .toBeTruthy();
+  } finally {
+    if (launchedSessionId) {
+      await request.delete(
+        backendPath(`/api/agent-sessions/${launchedSessionId}`),
+      );
+    }
+    killTmuxSession(sessionName);
+  }
+});
+
+test('browser: 频繁切换宫格后 tmux 终端仍会转发鼠标二进制事件', async ({
+  page,
+  request,
+}) => {
+  const sessionName = `e2e-mouse-grid-refocus-${Date.now()}`;
+  const displayName = `E2E Mouse Grid Refocus ${Date.now()}`;
+
+  let launchedSessionId: string | undefined;
+
+  killTmuxSession(sessionName);
+
+  try {
+    runTmux([
+      'new-session',
+      '-d',
+      '-s',
+      sessionName,
+      '-c',
+      process.cwd(),
+      'node ./scripts/mock-terminal-agent.mjs mouse',
+    ]);
+
+    const launchResponse = await request.post(
+      backendPath('/api/agent-launch/pty'),
+      {
+        data: {
+          workspaceId: 'default',
+          displayName,
+          agentKind: 'copilot',
+          command: `tmux attach -t '${sessionName}'`,
+          workingDirectory: process.cwd(),
+          tmuxSessionName: sessionName,
+        },
+      },
+    );
+
+    expect(launchResponse.ok()).toBeTruthy();
+    launchedSessionId = (await launchResponse.json()).id;
+    await waitForSessionInList(request, launchedSessionId);
+
+    await installWebSocketSpy(page);
+    await page.goto('/');
+    await ensureGridMode(page);
+
+    const card = page.locator('.grid-card', {
+      has: page.locator('.grid-card-name', { hasText: displayName }),
+    });
+    await expect(card).toBeVisible({ timeout: 15000 });
+
+    for (let index = 0; index < 3; index += 1) {
+      await card.dblclick();
+      await expect(page.locator('.focus-main .terminal-view')).toBeVisible({
+        timeout: 15000,
+      });
+      await page.getByRole('button', { name: '返回宫格' }).click();
+      await expect(card).toBeVisible({ timeout: 15000 });
+    }
+
+    await card.dblclick();
+
+    const terminal = page.locator('.focus-main .terminal-view');
+    const screen = page.locator('.focus-main .terminal-view .xterm-screen');
+    await expect(terminal).toBeVisible({ timeout: 15000 });
+    await expect(screen).toBeVisible({ timeout: 15000 });
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const terminal = document.querySelector(
+            '.focus-main .terminal-view',
+          ) as
+            | (HTMLDivElement & {
+                __xterm?: {
+                  modes?: {
+                    mouseTrackingMode?: string;
+                  };
+                };
+              })
+            | null;
+
+          return terminal?.__xterm?.modes?.mouseTrackingMode ?? 'none';
+        }),
+      )
+      .not.toBe('none');
+
+    const before = await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __terminalMouseFrames?: string[];
+          }
+        ).__terminalMouseFrames?.length ?? 0,
+    );
+
+    await screen.click({ position: { x: 80, y: 40 } });
+
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __terminalMouseFrames?: string[];
+              }
+            ).__terminalMouseFrames?.length ?? 0,
+        ),
+      )
+      .toBeGreaterThan(before);
+  } finally {
+    if (launchedSessionId) {
+      await request.delete(
+        backendPath(`/api/agent-sessions/${launchedSessionId}`),
+      );
+    }
+    killTmuxSession(sessionName);
+  }
+});
+
+test('browser: 切回宫格后重新进入 tmux 时第一次点击不会丢失', async ({
+  page,
+  request,
+}) => {
+  const sessionName = `e2e-mouse-first-click-${Date.now()}`;
+  const displayName = `E2E Mouse First Click ${Date.now()}`;
+
+  let launchedSessionId: string | undefined;
+
+  killTmuxSession(sessionName);
+
+  try {
+    runTmux([
+      'new-session',
+      '-d',
+      '-s',
+      sessionName,
+      '-c',
+      process.cwd(),
+      'node ./scripts/mock-terminal-agent.mjs mouse',
+    ]);
+
+    const launchResponse = await request.post(
+      backendPath('/api/agent-launch/pty'),
+      {
+        data: {
+          workspaceId: 'default',
+          displayName,
+          agentKind: 'copilot',
+          command: `tmux attach -t '${sessionName}'`,
+          workingDirectory: process.cwd(),
+          tmuxSessionName: sessionName,
+        },
+      },
+    );
+
+    expect(launchResponse.ok()).toBeTruthy();
+    launchedSessionId = (await launchResponse.json()).id;
+    await waitForSessionInList(request, launchedSessionId);
+
+    await installWebSocketSpy(page);
+    await page.goto('/');
+    await ensureGridMode(page);
+
+    const card = page.locator('.grid-card', {
+      has: page.locator('.grid-card-name', { hasText: displayName }),
+    });
+    await expect(card).toBeVisible({ timeout: 15000 });
+
+    await card.dblclick();
+    await expect(page.locator('.focus-main .terminal-view')).toBeVisible({
+      timeout: 15000,
+    });
+    await page.getByRole('button', { name: '返回宫格' }).click();
+    await expect(card).toBeVisible({ timeout: 15000 });
+
+    await card.dblclick();
+
+    const screen = page.locator('.focus-main .terminal-view .xterm-screen');
+    await expect(screen).toBeVisible({ timeout: 15000 });
+
+    const before = await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __terminalMouseFrames?: string[];
+          }
+        ).__terminalMouseFrames?.length ?? 0,
+    );
+
+    await screen.click({ position: { x: 80, y: 40 } });
+
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __terminalMouseFrames?: string[];
+              }
+            ).__terminalMouseFrames?.length ?? 0,
+        ),
+        {
+          timeout: 1000,
+        },
+      )
+      .toBeGreaterThan(before);
   } finally {
     if (launchedSessionId) {
       await request.delete(

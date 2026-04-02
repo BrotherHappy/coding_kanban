@@ -21,6 +21,11 @@ function cloneSessions(items: AgentSessionRecord[]): AgentSessionRecord[] {
 
 async function installMockWebSocket(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    const win = window as typeof window & {
+      __mockSockets?: MockWebSocket[];
+      __emitAgentSnapshot?: (snapshot: unknown) => void;
+    };
+
     class MockWebSocket extends EventTarget {
       static CONNECTING = 0;
       static OPEN = 1;
@@ -41,6 +46,8 @@ async function installMockWebSocket(page: Page): Promise<void> {
       constructor(url: string | URL) {
         super();
         this.url = String(url);
+        win.__mockSockets ??= [];
+        win.__mockSockets.push(this);
 
         queueMicrotask(() => {
           const event = new Event("open");
@@ -58,6 +65,23 @@ async function installMockWebSocket(page: Page): Promise<void> {
         this.onclose?.(event);
       }
     }
+
+    win.__emitAgentSnapshot = (snapshot: unknown) => {
+      const payload = JSON.stringify({
+        type: "snapshot",
+        payload: snapshot,
+      });
+
+      for (const socket of win.__mockSockets ?? []) {
+        if (socket.readyState !== MockWebSocket.OPEN) {
+          continue;
+        }
+
+        const event = new MessageEvent("message", { data: payload });
+        socket.dispatchEvent(event);
+        socket.onmessage?.(event);
+      }
+    };
 
     Object.defineProperty(window, "WebSocket", {
       configurable: true,
@@ -166,6 +190,75 @@ async function scanCurrentPath(page: Page): Promise<void> {
   await page.locator(".discovery-scan-btn").click();
 }
 
+async function openTmuxDiscovery(page: Page): Promise<void> {
+  await page.goto("/");
+  await page.getByTestId("btn-扫描 tmux").click();
+  await page.locator(".host-dropdown-item", { hasText: "本机" }).click();
+  await expect(page.locator(".discovery-dialog")).toBeVisible();
+}
+
+async function emitSnapshot(
+  page: Page,
+  snapshot: ListAgentSessionsResponse,
+): Promise<void> {
+  await page.evaluate((nextSnapshot) => {
+    const win = window as typeof window & {
+      __emitAgentSnapshot?: (snapshot: ListAgentSessionsResponse) => void;
+    };
+
+    win.__emitAgentSnapshot?.(nextSnapshot);
+  }, snapshot);
+}
+
+async function mockTmuxDiscovery(
+  page: Page,
+  initialSessions: AgentSessionRecord[],
+  discoveredSessions: AgentSessionRecord[],
+) {
+  let sessions = cloneSessions(initialSessions);
+  let scanCount = 0;
+
+  await installMockWebSocket(page);
+
+  await page.route("**/api/ssh-hosts", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ hosts: [] }),
+    });
+  });
+
+  await page.route("**/api/agent-sessions", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(buildSnapshot(sessions)),
+    });
+  });
+
+  await page.route("**/api/agent-discovery/tmux/scan", async (route) => {
+    scanCount += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: discoveredSessions,
+        unavailable: false,
+      }),
+    });
+  });
+
+  return {
+    getScanCount: () => scanCount,
+    pushSessions(nextSessions: AgentSessionRecord[]) {
+      sessions = cloneSessions(nextSessions);
+      return buildSnapshot(sessions);
+    },
+  };
+}
+
 test("app discovery can batch-add selected new scan results", async ({
   page,
 }) => {
@@ -258,4 +351,35 @@ test("app discovery can hide already joined results with the only-new filter", a
     "Project Beta Scan",
   );
   await expect(page.locator(".discovery-count")).toContainText("已选 0 项");
+});
+
+test("tmux discovery updates existing-state from live sessions without rescanning", async ({
+  page,
+}) => {
+  const discoveredSession = makeSession({
+    id: "discovered-tmux",
+    sourceType: "remote-tmux-discovered",
+    displayName: "Shared Dev Tmux",
+    interactionState: "detached",
+    transportRef: { tmuxSession: "shared-dev" },
+  });
+
+  const store = await mockTmuxDiscovery(page, [], [discoveredSession]);
+
+  await openTmuxDiscovery(page);
+
+  await expect.poll(store.getScanCount).toBe(1);
+  await expect(page.getByRole("button", { name: "加入宫格" })).toHaveCount(1);
+
+  const existingSession = makeSession({
+    id: "existing-grid-session",
+    displayName: "Shared Dev Tmux",
+    sourceType: "local",
+    transportRef: { tmuxSession: "shared-dev" },
+  });
+
+  await emitSnapshot(page, store.pushSessions([existingSession]));
+
+  await expect(page.getByRole("button", { name: "聚焦到宫格" })).toHaveCount(1);
+  await expect.poll(store.getScanCount).toBe(1);
 });

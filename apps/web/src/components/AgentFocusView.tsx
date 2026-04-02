@@ -9,6 +9,7 @@ import { WindowCapturePreview } from "./WindowCapturePreview";
 interface AgentFocusViewProps {
   focusedSession: AgentSessionRecord;
   sessions: AgentSessionRecord[];
+  active?: boolean;
   onSwitchFocus: (id: string) => void;
   onExit: () => void;
   onReconnect: (id: string) => void;
@@ -28,6 +29,7 @@ const stateLabels: Record<string, string> = {
 export function AgentFocusView({
   focusedSession,
   sessions,
+  active = true,
   onSwitchFocus,
   onExit,
   onReconnect,
@@ -37,6 +39,10 @@ export function AgentFocusView({
   getCaptureStream,
 }: AgentFocusViewProps) {
   useEffect(() => {
+    if (!active) {
+      return;
+    }
+
     function isInTerminal(node: HTMLElement | null): boolean {
       return Boolean(
         node?.closest(".focus-main-terminal") ||
@@ -73,7 +79,7 @@ export function AgentFocusView({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onExit]);
+  }, [active, onExit]);
 
   const otherSessions = sessions.filter((s) => s.id !== focusedSession.id);
   const isWindowCapture = focusedSession.sourceType === "local-window-capture";
@@ -81,6 +87,53 @@ export function AgentFocusView({
   const isDetached = focusedSession.interactionState === "detached";
   const canStopCapture =
     isWindowCapture && !isExited && !isDetached && Boolean(captureStream);
+
+  useEffect(() => {
+    if (active || isWindowCapture) {
+      return;
+    }
+
+    const textarea = document.querySelector(
+      ".focus-main-terminal .xterm-helper-textarea",
+    ) as HTMLTextAreaElement | null;
+
+    if (textarea && document.activeElement === textarea) {
+      textarea.blur();
+    }
+  }, [active, isWindowCapture]);
+
+  useEffect(() => {
+    if (!active || isWindowCapture) {
+      return;
+    }
+
+    const refocusTextarea = (forceBlur = false) => {
+      const textarea = document.querySelector(
+        ".focus-main-terminal .xterm-helper-textarea",
+      ) as HTMLTextAreaElement | null;
+      if (!textarea) {
+        return;
+      }
+
+      if (forceBlur && document.activeElement === textarea) {
+        textarea.blur();
+      }
+
+      textarea.focus();
+    };
+
+    const timeoutIds = [0, 32, 96].map((delay, index) =>
+      window.setTimeout(() => {
+        refocusTextarea(index === 0);
+      }, delay),
+    );
+
+    return () => {
+      for (const timeoutId of timeoutIds) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [active, focusedSession.id, isWindowCapture]);
 
   const focusDisplay = isWindowCapture
     ? getWindowCaptureDisplay(
@@ -146,6 +199,10 @@ export function AgentFocusView({
             <TerminalView
               agentSessionId={focusedSession.id}
               interactive={true}
+              active={active}
+              forceTmuxMouseCapture={Boolean(
+                focusedSession.transportRef?.tmuxSession,
+              )}
             />
           )}
         </div>
