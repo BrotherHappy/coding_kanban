@@ -20,6 +20,7 @@ interface AgentGridProps {
   suspendedSessionId?: string | null;
   hiddenCount?: number;
   onShowHidden?: () => void;
+  terminalFontSize?: number;
 }
 
 export function AgentGrid({
@@ -39,6 +40,7 @@ export function AgentGrid({
   suspendedSessionId,
   hiddenCount = 0,
   onShowHidden,
+  terminalFontSize,
 }: AgentGridProps) {
   return (
     <div className="agent-grid-container">
@@ -83,6 +85,7 @@ export function AgentGrid({
               captureStream={getCaptureStream?.(session.id)}
               onStopCapture={onStopCapture}
               terminalSuspended={session.id === suspendedSessionId}
+              terminalFontSize={terminalFontSize}
             />
           ))}
         </div>

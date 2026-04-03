@@ -43,6 +43,33 @@ test("resolveCopilotBinary prefers the binary next to the current node runtime",
   assert.equal(resolved, realCopilot);
 });
 
+test("resolveCopilotBinary prefers the Playwright shim when the test env opts in", () => {
+  const tempRoot = mkdtempSync(join(os.tmpdir(), "copilot-bin-"));
+  const nodeBinDir = join(tempRoot, "node-bin");
+  const playwrightBinDir = join(tempRoot, ".playwright-bin");
+
+  mkdirSync(nodeBinDir, { recursive: true });
+  mkdirSync(playwrightBinDir, { recursive: true });
+
+  const nodeExecPath = join(nodeBinDir, "node");
+  const realCopilot = join(nodeBinDir, "copilot");
+  const fakePlaywrightCopilot = join(playwrightBinDir, "copilot");
+
+  writeExecutable(nodeExecPath);
+  writeExecutable(realCopilot);
+  writeExecutable(fakePlaywrightCopilot);
+
+  const resolved = resolveCopilotBinary(
+    {
+      PATH: [playwrightBinDir, nodeBinDir].join(":"),
+      PLAYWRIGHT_USE_MOCK_COPILOT: "1",
+    },
+    nodeExecPath,
+  );
+
+  assert.equal(resolved, fakePlaywrightCopilot);
+});
+
 test("resolveCopilotBinary falls back to the first PATH match when no preferred candidate exists", () => {
   const tempRoot = mkdtempSync(join(os.tmpdir(), "copilot-bin-"));
   const firstBinDir = join(tempRoot, "first-bin");

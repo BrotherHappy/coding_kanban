@@ -1,10 +1,39 @@
 # Agent Orchestrator Kanban
 
-一个面向 CLI Coding Agent 的终端看板。它把本地进程、SSH 远端会话、tmux 会话和目录扫描结果统一放进一个看板里，方便你在一个页面里同时观察、切换、恢复和继续操作多个 Agent。
+一个面向 CLI Coding Agent 的终端看板。它把本地进程、SSH 远端会话、tmux 会话和目录扫描结果统一到同一个页面里，方便你在一个工作台中同时观察、切换、恢复并继续操作多个 Agent。
 
-这个项目当前更适合本地自托管和团队内部工作台场景：前端负责终端看板与交互，后端负责 PTY、WebSocket、tmux 和 SSH 编排。
+这个项目当前更适合本地自托管和团队内部工作台场景：
 
-## TODO
+- 前端负责终端看板、聚焦视图和交互体验
+- 后端负责 PTY、WebSocket、tmux、SSH 和会话编排
+
+## 你可以用它做什么
+
+- 在一个宫格里同时管理多个 CLI Agent 会话
+- 接管本地或远端 tmux 会话
+- 扫描目录并识别已有 Agent 工作状态
+- 通过 SSH 主机列表快速进入远端开发机
+- 观察本地 VS Code 窗口并把它当作会话卡片管理
+- 在聚焦视图里直接输入、切换和恢复上下文
+
+## 5 分钟快速开始
+
+如果你只想尽快跑起来，直接执行：
+
+```bash
+git clone <your-repo-url>
+cd coding_kanban
+pnpm install
+./scripts/restart-dev.sh
+```
+
+然后在浏览器中打开脚本打印出的前端地址即可。
+
+推荐继续看：
+
+- [安装与快速启动文档](docs/installation.md)
+
+## 路线图
 
 - [ ] 重启后支持恢复历史对话
 - [ ] 打包为 electron 应用
@@ -52,7 +81,7 @@
 - 输入主机、会话名和目录后，可以直接拉起并进入聚焦态。
 - mac 浏览器提示 `⌘+E`，Windows / Linux 浏览器提示 `Ctrl+E`。
 
-## 它能做什么
+## 核心能力
 
 ### 统一看板管理多个 Agent 会话
 
@@ -128,7 +157,30 @@
 - 测试：Playwright
 - 包管理：pnpm workspace
 
-## 安装要求
+## 快速安装入口
+
+如果你是第一次使用，建议先看：
+
+- [安装与快速启动文档](docs/installation.md)
+
+最短启动路径：
+
+```bash
+git clone <your-repo-url>
+cd coding_kanban
+pnpm install
+./scripts/restart-dev.sh
+```
+
+如果你想验证测试环境是否正常：
+
+```bash
+pnpm test
+pnpm check
+pnpm e2e
+```
+
+## 环境要求（摘要）
 
 ### 必需
 
@@ -165,40 +217,16 @@ Fedora / RHEL:
 sudo dnf install -y tmux openssh-clients openssl
 ```
 
+更完整的安装、启动、HTTPS 和 SSH 说明请看：
+
+- [docs/installation.md](docs/installation.md)
+
 ## 兼容性约定
 
 - 服务端支持部署在 Linux 和 macOS。
 - 本地 PTY 与远端交互 shell 会优先使用当前环境的 `SHELL`，如果没有，再按 `bash -> zsh -> sh` 自动回退，不再假设必须有 zsh。
 - 本地 tmux 会自动尝试这些位置：`TMUX_BINARY`、`/opt/homebrew/bin/tmux`、`/usr/local/bin/tmux`，最后再回退到 `PATH` 里的 `tmux`。
 - 前端已按 Chromium 浏览器处理快捷键显示：mac 浏览器显示 `⌘+E`，Windows / Linux 浏览器显示 `Ctrl+E`。
-
-## 安装步骤
-
-### 1. 克隆仓库
-
-```bash
-git clone <your-repo-url>
-cd coding_kanban
-```
-
-### 2. 安装依赖
-
-```bash
-pnpm install
-```
-
-### 3. 准备 SSH 配置（可选）
-
-如果你需要远端看板能力，请在 `~/.ssh/config` 里准备好主机，例如：
-
-```sshconfig
-Host hm24
-  HostName 10.30.0.24
-  User huxing
-  Port 10022
-```
-
-应用启动后会自动把这些 Host 显示在左侧主机列表里。
 
 ## 启动方式
 
@@ -252,7 +280,7 @@ WEB_HTTPS=1 ./scripts/restart-dev.sh
 WEB_HTTPS=1 WEB_HTTPS_SAN='DNS:localhost,IP:127.0.0.1,IP:10.30.0.15' ./scripts/restart-dev.sh
 ```
 
-### Linux 和 macOS 的启动差异
+### Linux 和 macOS 的差异
 
 - 启动命令本身相同，都是 `./scripts/restart-dev.sh`。
 - Linux 上脚本通常会把 `hostname -I` 解析到的局域网 IP 自动加入证书 SAN，更适合局域网里的其他设备直接访问 HTTPS 页面。
@@ -272,7 +300,7 @@ pnpm --filter web dev
 pnpm dev
 ```
 
-## 快速上手
+## 上手方式
 
 ### 新建一个本地会话
 
@@ -324,10 +352,16 @@ pnpm dev          # 并发启动前后端
 pnpm dev:restart  # 用脚本清端口并重启
 pnpm build        # 构建 shared/server/web
 pnpm check        # 类型检查 + 生产构建
-pnpm e2e          # 运行 Playwright E2E
+pnpm e2e          # 运行 Playwright E2E（自动拉起独立测试前后端）
 pnpm test         # 运行所有 workspace test 脚本
 pnpm format       # 格式化整个仓库
 ```
+
+其中：
+
+- `pnpm test`：跑 workspace 内的单元/服务测试
+- `pnpm check`：做类型检查与生产构建验证
+- `pnpm e2e`：自动拉起一套独立测试前后端并运行 Playwright
 
 ## 演示截图如何更新
 
@@ -367,14 +401,14 @@ README_BASE_URL=http://127.0.0.1:3000 README_API_URL=http://127.0.0.1:4000 node 
 
 这个脚本会忽略本地自签证书错误，因此和 `./scripts/restart-dev.sh` 的默认 HTTPS 配置可以直接配合使用。
 
-## 当前实现更适合哪些场景
+## 适合的使用场景
 
 - 同时跟踪多个 CLI Agent 的工作状态
 - 远端开发机上的 tmux 会话切换与接管
 - 在一个页面里观察本地、远端、tmux 和扫描结果
 - 需要频繁在多个 Agent 之间切换上下文的日常开发工作流
 
-## 已验证的行为
+## 已验证能力
 
 当前仓库已经有覆盖以下关键行为的 E2E：
 
@@ -402,16 +436,16 @@ README_BASE_URL=http://127.0.0.1:3000 README_API_URL=http://127.0.0.1:4000 node 
 
 ### 页面打不开或 API 报错
 
-- 先执行：
-
-```bash
-./scripts/restart-dev.sh
-```
-
-- 再检查：
+- 先检查后端健康状态：
 
 ```bash
 curl http://127.0.0.1:4000/api/health
+```
+
+- 如果不通，再执行：
+
+```bash
+./scripts/restart-dev.sh
 ```
 
 ### 远端 tmux 尺寸或状态栏显示异常
@@ -421,4 +455,4 @@ curl http://127.0.0.1:4000/api/health
 
 ## 说明
 
-这个项目当前是一个偏工程化、偏实用主义的 Agent 控制台原型，重点在于把多终端编排、tmux 连接、目录扫描和实时终端交互整合到一个工作流里，而不是做成通用 SaaS 产品。
+这个项目目前更偏工程化、偏实用主义：重点是把多终端编排、tmux 连接、目录扫描和实时终端交互整合到一个统一工作流里，而不是做成通用 SaaS 产品。

@@ -11,4 +11,8 @@ describe("stripTerminalResponsePayload", () => {
   it("keeps normal arrow-key input intact", () => {
     assert.equal(stripTerminalResponsePayload("\u001b[A"), "\u001b[A");
   });
+
+  it("drops CPR row and column reports so TerminalView can forward a single controlled reply", () => {
+    assert.equal(stripTerminalResponsePayload("\u001b[12;42R"), "");
+  });
 });

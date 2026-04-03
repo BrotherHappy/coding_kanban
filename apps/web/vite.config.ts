@@ -23,6 +23,19 @@ function readHttpsConfig() {
   };
 }
 
+function readBackendUrl() {
+  const backendUrl = process.env.VITE_BACKEND_URL?.trim();
+
+  if (backendUrl) {
+    return backendUrl.replace(/\/+$/, '');
+  }
+
+  return 'http://localhost:4000';
+}
+
+const backendUrl = readBackendUrl();
+const backendWsUrl = backendUrl.replace(/^http/, 'ws');
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -30,9 +43,9 @@ export default defineConfig({
     port: 3000,
     https: readHttpsConfig(),
     proxy: {
-      '/api': 'http://localhost:4000',
+      '/api': backendUrl,
       '/ws': {
-        target: 'ws://localhost:4000',
+        target: backendWsUrl,
         ws: true,
       },
     },

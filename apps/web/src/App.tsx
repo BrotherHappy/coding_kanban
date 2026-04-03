@@ -42,6 +42,11 @@ import {
   type LayoutState,
 } from "./lib/layout-store";
 import {
+  loadTerminalSettings,
+  saveTerminalSettings,
+  type TerminalSettings,
+} from "./lib/terminal-settings";
+import {
   buildDirectLaunchCommand,
   buildRemoteDirectLaunchCommand,
   wrapRemoteInteractiveCommand,
@@ -92,6 +97,8 @@ export default function App() {
   );
   const [quickTmuxOpen, setQuickTmuxOpen] = useState(false);
   const [layoutState, setLayoutState] = useState<LayoutState>(loadLayoutState);
+  const [terminalSettings, setTerminalSettings] =
+    useState<TerminalSettings>(loadTerminalSettings);
   const [sshHosts, setSshHosts] = useState<SshHostPreset[]>([]);
   const [discoveryState, setDiscoveryState] = useState<{
     open: boolean;
@@ -528,6 +535,14 @@ export default function App() {
     });
   }
 
+  function updateTerminalSettings(partial: Partial<TerminalSettings>) {
+    setTerminalSettings((prev) => {
+      const next = { ...prev, ...partial };
+      saveTerminalSettings(next);
+      return next;
+    });
+  }
+
   function handleScanTmux(host: SelectedHost) {
     setDiscoveryState({ open: true, mode: "tmux", host });
   }
@@ -613,6 +628,7 @@ export default function App() {
         sessions={sessions}
         collapsed={layoutState.topbarCollapsed}
         sshHosts={sshHosts}
+        terminalFontSize={terminalSettings.fontSize}
         onToggleCollapsed={() =>
           updateLayout({ topbarCollapsed: !layoutState.topbarCollapsed })
         }
@@ -621,6 +637,9 @@ export default function App() {
         onScanApps={handleScanApps}
         onOpenQuickTmuxConnect={() => setQuickTmuxOpen(true)}
         onAddWindowCapture={handleAddWindowCapture}
+        onTerminalFontSizeChange={(fontSize) =>
+          updateTerminalSettings({ fontSize })
+        }
         windowCaptureSupported={windowCaptureAvailability.supported}
         windowCaptureReason={windowCaptureAvailability.reason}
       />
@@ -659,6 +678,7 @@ export default function App() {
                     )}
                     onStopCapture={handleStopCapture}
                     getCaptureStream={getCaptureStreamForSession}
+                    terminalFontSize={terminalSettings.fontSize}
                   />
                 </div>
               ) : null}
@@ -681,6 +701,7 @@ export default function App() {
                     onStopCapture={handleStopCapture}
                     hiddenCount={hiddenSessions.length}
                     onShowHidden={() => setShowHiddenDrawer(true)}
+                    terminalFontSize={terminalSettings.fontSize}
                   />
                 </div>
               )}

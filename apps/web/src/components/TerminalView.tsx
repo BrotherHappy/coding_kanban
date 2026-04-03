@@ -13,6 +13,7 @@ interface TerminalViewProps {
   suspended?: boolean;
   forceTmuxMouseCapture?: boolean;
   active?: boolean;
+  fontSize?: number;
 }
 
 type TerminalContainer = HTMLDivElement & {
@@ -73,6 +74,11 @@ interface XtermInternalCore {
   };
 }
 
+interface XtermBufferCursor {
+  cursorX?: number;
+  cursorY?: number;
+}
+
 const DEFAULT_PREVIEW_GEOMETRY: TerminalGeometry = {
   cols: 120,
   rows: 30,
@@ -82,6 +88,24 @@ const DEFAULT_PREVIEW_GEOMETRY: TerminalGeometry = {
 
 const previewGeometryCache = new Map<string, TerminalGeometry>();
 const terminalInputOwners = new Map<string, TerminalInputOwner>();
+
+function countCursorPositionQueries(payload: string): number {
+  return payload.match(/\u001b\[(?:\?)?6n/g)?.length ?? 0;
+}
+
+function buildCursorPositionResponse(term: Terminal): string {
+  const buffer = (
+    term as Terminal & {
+      buffer?: {
+        active?: XtermBufferCursor;
+      };
+    }
+  ).buffer?.active;
+  const row = (buffer?.cursorY ?? 0) + 1;
+  const col = (buffer?.cursorX ?? 0) + 1;
+
+  return `\u001b[${row};${col}R`;
+}
 
 function encodeSgrMouseFrame(options: {
   button: number;
@@ -113,6 +137,7 @@ export function TerminalView({
   suspended = false,
   forceTmuxMouseCapture = false,
   active = true,
+  fontSize = 14,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -224,7 +249,7 @@ export function TerminalView({
 
     const term = new Terminal({
       cursorBlink: interactive,
-      fontSize: 14,
+      fontSize,
       fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
       theme: {
         background: "#0e1217",
@@ -524,18 +549,36 @@ export function TerminalView({
       flushPendingMouseReplay();
     };
 
+    const forwardCursorPositionReplies = (payload: string) => {
+      const queryCount = countCursorPositionQueries(payload);
+      if (queryCount === 0) {
+        return;
+      }
+
+      if (ws?.readyState !== WebSocket.OPEN || !ensureInputOwner()) {
+        return;
+      }
+
+      const response = buildCursorPositionResponse(term);
+      for (let index = 0; index < queryCount; index += 1) {
+        ws.send(response);
+      }
+    };
+
     const handleTerminalFrame = (payload: string) => {
       try {
         const parsed = JSON.parse(payload) as TerminalControlFrame;
         if (parsed.__agentOrchestrator !== "terminal-control") {
           enableTerminalInput();
           term.write(payload);
+          forwardCursorPositionReplies(payload);
           flushPendingMouseReplay();
           return;
         }
 
         if (parsed.event === "replay" && typeof parsed.data === "string") {
           term.write(parsed.data);
+          forwardCursorPositionReplies(parsed.data);
           flushPendingMouseReplay();
           return;
         }
@@ -547,6 +590,7 @@ export function TerminalView({
       } catch {
         enableTerminalInput();
         term.write(payload);
+        forwardCursorPositionReplies(payload);
         flushPendingMouseReplay();
       }
     };
@@ -690,6 +734,17 @@ export function TerminalView({
       flushPendingMouseReplayRef.current = null;
     };
   }, [agentSessionId, forceTmuxMouseCapture, interactive, suspended]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) {
+      return;
+    }
+
+    term.options.fontSize = fontSize;
+    scheduleFitRef.current?.();
+    flushResizeRef.current?.();
+  }, [fontSize]);
 
   return (
     <div

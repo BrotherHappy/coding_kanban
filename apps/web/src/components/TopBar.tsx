@@ -1,3 +1,5 @@
+import type { ChangeEvent } from "react";
+
 import type {
   AgentSessionRecord,
   SshHostPreset,
@@ -11,12 +13,14 @@ interface TopBarProps {
   sessions: AgentSessionRecord[];
   collapsed: boolean;
   sshHosts: SshHostPreset[];
+  terminalFontSize: number;
   onToggleCollapsed: () => void;
   onOpenNewSession: (host: SelectedHost) => void;
   onScanTmux: (host: SelectedHost) => void;
   onScanApps: (host: SelectedHost) => void;
   onOpenQuickTmuxConnect: () => void;
   onAddWindowCapture: () => void;
+  onTerminalFontSizeChange: (fontSize: number) => void;
   windowCaptureSupported: boolean;
   windowCaptureReason?: string | null;
 }
@@ -25,15 +29,23 @@ export function TopBar({
   sessions,
   collapsed,
   sshHosts,
+  terminalFontSize,
   onToggleCollapsed,
   onOpenNewSession,
   onScanTmux,
   onScanApps,
   onOpenQuickTmuxConnect,
   onAddWindowCapture,
+  onTerminalFontSizeChange,
   windowCaptureSupported,
   windowCaptureReason,
 }: TopBarProps) {
+  const handleTerminalFontSizeChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    onTerminalFontSizeChange(Number(event.target.value));
+  };
+
   const quickTmuxShortcutLabel = getQuickTmuxShortcutLabel();
   const runningCount = sessions.filter(
     (s) => s.interactionState === "running",
@@ -99,6 +111,28 @@ export function TopBar({
           快速连接 tmux
           <span className="top-bar-shortcut">{quickTmuxShortcutLabel}</span>
         </button>
+        <label className="top-bar-setting" htmlFor="terminal-font-size-slider">
+          <span className="top-bar-setting-label">终端字号</span>
+          <input
+            id="terminal-font-size-slider"
+            aria-label="终端字号"
+            className="top-bar-setting-slider"
+            data-testid="terminal-font-size-slider"
+            max={18}
+            min={10}
+            onChange={handleTerminalFontSizeChange}
+            onInput={handleTerminalFontSizeChange}
+            step={1}
+            type="range"
+            value={terminalFontSize}
+          />
+          <span
+            className="top-bar-setting-value"
+            data-testid="terminal-font-size-value"
+          >
+            {terminalFontSize}px
+          </span>
+        </label>
         <span className="stat-item">
           共 <strong>{totalCount}</strong> 个会话
         </span>

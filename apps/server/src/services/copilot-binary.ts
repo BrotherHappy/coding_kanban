@@ -67,7 +67,7 @@ function scoreCandidate(
   }
 
   if (normalized.includes(normalize("/.playwright-bin/"))) {
-    score -= 100;
+    score += env.PLAYWRIGHT_USE_MOCK_COPILOT === "1" ? 120 : -100;
   }
 
   if (home) {

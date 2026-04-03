@@ -17,6 +17,7 @@ interface AgentFocusViewProps {
   captureStream?: MediaStream | null;
   onStopCapture?: (id: string) => void;
   getCaptureStream?: (id: string) => MediaStream | null;
+  terminalFontSize?: number;
 }
 
 const stateLabels: Record<string, string> = {
@@ -37,6 +38,7 @@ export function AgentFocusView({
   captureStream,
   onStopCapture,
   getCaptureStream,
+  terminalFontSize,
 }: AgentFocusViewProps) {
   useEffect(() => {
     if (!active) {
@@ -200,6 +202,7 @@ export function AgentFocusView({
               agentSessionId={focusedSession.id}
               interactive={true}
               active={active}
+              fontSize={terminalFontSize}
               forceTmuxMouseCapture={Boolean(
                 focusedSession.transportRef?.tmuxSession,
               )}
@@ -277,6 +280,7 @@ export function AgentFocusView({
                   ) : (
                     <TerminalView
                       agentSessionId={session.id}
+                      fontSize={terminalFontSize}
                       interactive={false}
                     />
                   )}

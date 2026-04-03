@@ -17,6 +17,7 @@ interface AgentGridCardProps {
   captureStream?: MediaStream | null;
   onStopCapture?: (id: string) => void;
   terminalSuspended?: boolean;
+  terminalFontSize?: number;
 }
 
 const stateLabels: Record<string, string> = {
@@ -63,6 +64,7 @@ export function AgentGridCard({
   captureStream,
   onStopCapture,
   terminalSuspended = false,
+  terminalFontSize,
 }: AgentGridCardProps) {
   const stateClass = stateColors[session.interactionState] ?? "";
   const stateLabel =
@@ -192,6 +194,7 @@ export function AgentGridCard({
         ) : (
           <TerminalView
             agentSessionId={session.id}
+            fontSize={terminalFontSize}
             interactive={false}
             suspended={terminalSuspended}
           />

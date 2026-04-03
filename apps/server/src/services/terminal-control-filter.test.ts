@@ -18,6 +18,12 @@ test("keep normal keyboard escape sequences intact", () => {
   assert.equal(sanitized, "\u001b[A");
 });
 
+test("keep CPR row and column reports intact for interactive prompts", () => {
+  const sanitized = stripTerminalResponsePayload("\u001b[12;42R");
+
+  assert.equal(sanitized, "\u001b[12;42R");
+});
+
 test("sanitize replay removes window and cursor report sequences", () => {
   const replay =
     "prompt> \u001b[>cprompt redraw\u001b[6n\u001b[18t\u001b[12;42Rstill here";
