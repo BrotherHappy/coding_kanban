@@ -1,4 +1,4 @@
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 
 import type {
   AgentSessionRecord,
@@ -44,6 +44,10 @@ export function TopBar({
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     onTerminalFontSizeChange(Number(event.target.value));
+  };
+
+  const handleTerminalFontSizeInput = (event: FormEvent<HTMLInputElement>) => {
+    onTerminalFontSizeChange(Number(event.currentTarget.value));
   };
 
   const quickTmuxShortcutLabel = getQuickTmuxShortcutLabel();
@@ -121,7 +125,7 @@ export function TopBar({
             max={18}
             min={10}
             onChange={handleTerminalFontSizeChange}
-            onInput={handleTerminalFontSizeChange}
+            onInput={handleTerminalFontSizeInput}
             step={1}
             type="range"
             value={terminalFontSize}

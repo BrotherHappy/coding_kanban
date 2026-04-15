@@ -12,3 +12,4 @@ vibe-kanban
 ./vibe-kanban
 .playwright
 .omx
+.runtime

@@ -123,6 +123,40 @@ function killRemoteTmuxSession(
   }
 }
 
+function getRemoteTmuxClientSize(
+  host: {
+    host: string;
+    port: number;
+    username?: string;
+    identityFile?: string;
+  },
+  sessionName: string,
+): { cols: number; rows: number } | null {
+  try {
+    const output = runSshCommand(
+      host,
+      `tmux list-clients -t ${shellQuote(sessionName)} -F '#{client_width}x#{client_height}'`,
+    );
+    const firstLine = output.split('\n').find(Boolean);
+
+    if (!firstLine) {
+      return null;
+    }
+
+    const match = firstLine.match(/^(\d+)x(\d+)$/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      cols: Number(match[1]),
+      rows: Number(match[2]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function tmuxPaneContainsText(sessionName: string, text: string): boolean {
   try {
     return runTmux(['capture-pane', '-pt', sessionName]).includes(text);
@@ -1056,17 +1090,21 @@ test('browser: Ctrl/Meta+E 可以快速连接远端 tmux 并自动聚焦', async
   request,
 }) => {
   const sshHosts = await getSshHosts(request);
-  const hm24 = sshHosts.find((host) => host.name === 'hm24');
+  const remoteHost =
+    sshHosts.find((host) => host.name === 'hm20') ??
+    sshHosts.find((host) => host.name === 'hm24');
 
-  test.skip(!hm24, 'requires hm24 ssh preset');
+  test.skip(!remoteHost, 'requires hm20 or hm24 ssh preset');
 
   const sessionName = `quick-e2e-${Date.now()}`;
   const workingDirectory = '~/';
+  const marker = `REMOTE_TMUX_OK_${Date.now()}`;
   let launchedSessionId: string | undefined;
 
-  killRemoteTmuxSession(hm24!, sessionName);
+  killRemoteTmuxSession(remoteHost!, sessionName);
 
   try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto('/');
     await expect(
       page.getByRole('button', { name: /快速连接 tmux/ }),
@@ -1086,7 +1124,7 @@ test('browser: Ctrl/Meta+E 可以快速连接远端 tmux 并自动聚焦', async
     await expect(page.getByTestId('quick-tmux-connect-dialog')).toBeVisible();
 
     const hostSearch = page.getByTestId('quick-tmux-host-search');
-    await hostSearch.fill('hm24');
+    await hostSearch.fill(remoteHost!.name);
     await page.keyboard.press('Enter');
 
     await expect(page.getByTestId('quick-tmux-session-name')).toBeVisible();
@@ -1114,6 +1152,41 @@ test('browser: Ctrl/Meta+E 可以快速连接远端 tmux 并自动聚焦', async
     launchedSessionId = (await findSessionByDisplayName(request, sessionName))
       ?.id;
 
+    await expect
+      .poll(() => getRemoteTmuxClientSize(remoteHost!, sessionName), {
+        timeout: 15000,
+      })
+      .not.toBeNull();
+
+    const remoteSize = getRemoteTmuxClientSize(remoteHost!, sessionName);
+    expect(remoteSize).not.toBeNull();
+    expect(remoteSize!.cols).toBeGreaterThanOrEqual(120);
+    expect(remoteSize!.rows).toBeGreaterThanOrEqual(35);
+
+    const remoteActiveBorderStyle = runSshCommand(
+      remoteHost!,
+      `tmux show-window-options -vt ${shellQuote(sessionName)} pane-active-border-style 2>/dev/null || true`,
+    ).trim();
+    expect(remoteActiveBorderStyle).not.toContain("#00afff");
+    expect(remoteActiveBorderStyle).not.toContain("fg=#00afff");
+
+    await page.locator('.focus-main-terminal .xterm-screen').click();
+    await page.keyboard.type(`printf '${marker}\\n'`);
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(() => {
+        try {
+          return runSshCommand(
+            remoteHost!,
+            `tmux capture-pane -pt ${shellQuote(sessionName)}`,
+          );
+        } catch {
+          return '';
+        }
+      })
+      .toContain(marker);
+
     await page.getByRole('button', { name: '返回宫格' }).click();
 
     const card = page.locator('.grid-card', {
@@ -1128,8 +1201,8 @@ test('browser: Ctrl/Meta+E 可以快速连接远端 tmux 并自动聚焦', async
       );
     }
 
-    if (hm24) {
-      killRemoteTmuxSession(hm24, sessionName);
+    if (remoteHost) {
+      killRemoteTmuxSession(remoteHost, sessionName);
     }
   }
 });

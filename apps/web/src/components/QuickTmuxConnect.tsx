@@ -40,7 +40,10 @@ function buildQuickTmuxCommand(
   tmuxSessionName: string,
   workingDirectory: string,
 ): string {
-  return `exec tmux new-session -A -s ${shellQuote(tmuxSessionName)} -c ${formatWorkingDirectory(workingDirectory)}`;
+  const quotedSessionName = shellQuote(tmuxSessionName);
+  const createIfMissing = `tmux has-session -t ${quotedSessionName} 2>/dev/null || tmux new-session -d -s ${quotedSessionName} -c ${formatWorkingDirectory(workingDirectory)}`;
+  const normalizePaneBorder = `tmux set-window-option -t ${quotedSessionName} pane-border-style "fg=#4b5563" && tmux set-window-option -t ${quotedSessionName} pane-active-border-style "fg=#4b5563"`;
+  return `${createIfMissing} && ${normalizePaneBorder} && exec tmux attach -t ${quotedSessionName}`;
 }
 
 function buildDefaultQuickTmuxName(hostName: string): string {

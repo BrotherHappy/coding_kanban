@@ -85,6 +85,10 @@ const DEFAULT_PREVIEW_GEOMETRY: TerminalGeometry = {
   width: 1180,
   height: 760,
 };
+const DEFAULT_TERMINAL_FONT_FAMILY =
+  '"IBM Plex Mono", "SFMono-Regular", monospace';
+const TMUX_TERMINAL_FONT_FAMILY =
+  '"DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", monospace';
 
 const previewGeometryCache = new Map<string, TerminalGeometry>();
 const terminalInputOwners = new Map<string, TerminalInputOwner>();
@@ -248,9 +252,15 @@ export function TerminalView({
     };
 
     const term = new Terminal({
+      customGlyphs: !forceTmuxMouseCapture,
       cursorBlink: interactive,
       fontSize,
-      fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
+      fontFamily: forceTmuxMouseCapture
+        ? TMUX_TERMINAL_FONT_FAMILY
+        : DEFAULT_TERMINAL_FONT_FAMILY,
+      lineHeight: 1,
+      letterSpacing: 0,
+      rescaleOverlappingGlyphs: !forceTmuxMouseCapture,
       theme: {
         background: "#0e1217",
         foreground: "#f4f1ea",

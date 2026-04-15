@@ -158,6 +158,7 @@ input {
 .main-layout {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
   z-index: 1;
@@ -454,17 +455,20 @@ input {
 /* ===== Main Content ===== */
 .main-content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 16px;
 }
 
 .main-content-stage {
+  height: 100%;
+  min-height: 0;
   position: relative;
-  min-height: 100%;
 }
 
 .main-content-view {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .main-content-view.is-hidden {
@@ -771,6 +775,7 @@ input {
 .focus-view {
   display: flex;
   height: 100%;
+  min-height: 0;
   gap: 16px;
 }
 
@@ -778,6 +783,7 @@ input {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
 }
 
@@ -871,6 +877,7 @@ input {
 
 .focus-main-terminal {
   flex: 1;
+  min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-top: none;
   border-radius: 0 0 12px 12px;
@@ -884,6 +891,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
   overflow-y: auto;
 }
 

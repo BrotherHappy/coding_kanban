@@ -17,6 +17,7 @@ import { sanitizeReplayForTerminal } from "./terminal-control-filter.js";
 type PtyDataListener = (data: string) => void;
 
 const MAX_SCROLLBACK_BYTES = 256 * 1024; // 256 KB replay buffer
+const SSH_TMUX_RESIZE_SIGNAL_RETRY_MS = [120, 360, 1000];
 interface PtyHandle {
   ptyProcess: pty.IPty;
   dataListeners: Set<PtyDataListener>;
@@ -98,10 +99,32 @@ function buildLocalSpawnPlan(
   };
 }
 
+function dispatchSigwinch(pid: number): void {
+  try {
+    process.kill(pid, "SIGWINCH");
+  } catch {
+    /* ignore processes that have already exited */
+  }
+}
+
 export class PtyRuntimeManager {
   private readonly handles = new Map<string, PtyHandle>();
+  private readonly resizeRetryTimers = new Map<string, NodeJS.Timeout[]>();
 
   constructor(private readonly registry: AgentSessionRegistry) {}
+
+  private clearResizeRetryTimers(agentSessionId: string): void {
+    const timers = this.resizeRetryTimers.get(agentSessionId);
+    if (!timers) {
+      return;
+    }
+
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+
+    this.resizeRetryTimers.delete(agentSessionId);
+  }
 
   launch(input: LaunchLocalAgentInput): AgentSessionRecord {
     const shell = resolvePreferredShell();
@@ -162,6 +185,7 @@ export class PtyRuntimeManager {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      this.clearResizeRetryTimers(agentSession.id);
       this.handles.delete(agentSession.id);
 
       if (!this.registry.has(agentSession.id)) {
@@ -276,13 +300,34 @@ export class PtyRuntimeManager {
 
     handle.ptyProcess.resize(cols, rows);
 
-    try {
-      // Some interactive programs, especially ssh -> tmux, only propagate the
-      // new window size after the foreground process receives SIGWINCH.
-      process.kill(handle.ptyProcess.pid, "SIGWINCH");
-    } catch {
-      /* ignore processes that have already exited */
+    // Some interactive programs, especially ssh -> tmux, only propagate the
+    // new window size after the foreground process receives SIGWINCH. On
+    // slower remote hosts, the initial signal can arrive before tmux has fully
+    // attached, so we retry a few times to help the remote client adopt the
+    // fitted browser geometry.
+    dispatchSigwinch(handle.ptyProcess.pid);
+
+    const session = this.registry.get(agentSessionId);
+    const needsRetry =
+      Boolean(session.transportRef?.tmuxSession) ||
+      session.transportRef?.runtimeId?.startsWith("ssh-pty:") === true;
+
+    if (!needsRetry) {
+      return;
     }
+
+    this.clearResizeRetryTimers(agentSessionId);
+    const timers: NodeJS.Timeout[] = [];
+
+    for (const delay of SSH_TMUX_RESIZE_SIGNAL_RETRY_MS) {
+      const timer = setTimeout(() => {
+        dispatchSigwinch(handle.ptyProcess.pid);
+      }, delay);
+      timer.unref?.();
+      timers.push(timer);
+    }
+
+    this.resizeRetryTimers.set(agentSessionId, timers);
   }
 
   getScrollback(agentSessionId: string): string {
@@ -326,6 +371,7 @@ export class PtyRuntimeManager {
   }
 
   kill(agentSessionId: string): void {
+    this.clearResizeRetryTimers(agentSessionId);
     const handle = this.handles.get(agentSessionId);
     if (handle) {
       handle.ptyProcess.kill();
@@ -390,6 +436,7 @@ export class PtyRuntimeManager {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      this.clearResizeRetryTimers(agentSessionId);
       this.handles.delete(agentSessionId);
 
       if (!this.registry.has(agentSessionId)) {
@@ -456,6 +503,7 @@ export class PtyRuntimeManager {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      this.clearResizeRetryTimers(agentSessionId);
       this.handles.delete(agentSessionId);
 
       if (!this.registry.has(agentSessionId)) {

@@ -218,6 +218,123 @@ test("launch keeps tmux attach sessions alive when the card is labeled as copilo
   }
 });
 
+test("resize retries SIGWINCH for ssh/tmux sessions", async () => {
+  const registry = new AgentSessionRegistry();
+  const runtimeManager = new PtyRuntimeManager(registry);
+  const resizeCalls: Array<{ cols: number; rows: number }> = [];
+  const killCalls: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+  const originalKill = process.kill;
+
+  const session = registry.register({
+    workspaceId: "remote-tmux",
+    hostId: "hm20",
+    sourceType: "remote-connect",
+    agentKind: "shell",
+    displayName: "Remote tmux",
+    interactionState: "running",
+    transportRef: {
+      runtimeId: "ssh-pty:4321",
+      tmuxSession: "hm20-dev",
+    },
+  });
+
+  (runtimeManager as unknown as { handles: Map<string, unknown> }).handles.set(
+    session.id,
+    {
+      ptyProcess: {
+        pid: 4321,
+        resize(cols: number, rows: number) {
+          resizeCalls.push({ cols, rows });
+        },
+      },
+    },
+  );
+
+  process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+    if (typeof signal === "string") {
+      killCalls.push({ pid, signal });
+    }
+    return true;
+  }) as typeof process.kill;
+
+  try {
+    runtimeManager.resize(session.id, 160, 48);
+    await sleep(1_150);
+
+    assert.deepEqual(resizeCalls, [{ cols: 160, rows: 48 }]);
+    assert.equal(killCalls.length, 4);
+    assert.deepEqual(
+      killCalls.map(({ pid, signal }) => ({ pid, signal })),
+      [
+        { pid: 4321, signal: "SIGWINCH" },
+        { pid: 4321, signal: "SIGWINCH" },
+        { pid: 4321, signal: "SIGWINCH" },
+        { pid: 4321, signal: "SIGWINCH" },
+      ],
+    );
+  } finally {
+    process.kill = originalKill;
+  }
+});
+
+test("resize coalesces pending ssh/tmux SIGWINCH retries", async () => {
+  const registry = new AgentSessionRegistry();
+  const runtimeManager = new PtyRuntimeManager(registry);
+  const killCalls: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+  const originalKill = process.kill;
+
+  const session = registry.register({
+    workspaceId: "remote-tmux",
+    hostId: "hm20",
+    sourceType: "remote-connect",
+    agentKind: "shell",
+    displayName: "Remote tmux",
+    interactionState: "running",
+    transportRef: {
+      runtimeId: "ssh-pty:9876",
+      tmuxSession: "hm20-dev",
+    },
+  });
+
+  (runtimeManager as unknown as { handles: Map<string, unknown> }).handles.set(
+    session.id,
+    {
+      ptyProcess: {
+        pid: 9876,
+        resize() {},
+      },
+    },
+  );
+
+  process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+    if (typeof signal === "string") {
+      killCalls.push({ pid, signal });
+    }
+    return true;
+  }) as typeof process.kill;
+
+  try {
+    runtimeManager.resize(session.id, 120, 30);
+    await sleep(20);
+    runtimeManager.resize(session.id, 160, 48);
+    await sleep(1_150);
+
+    assert.equal(killCalls.length, 5);
+    assert.deepEqual(
+      killCalls.map(({ pid, signal }) => ({ pid, signal })),
+      [
+        { pid: 9876, signal: "SIGWINCH" },
+        { pid: 9876, signal: "SIGWINCH" },
+        { pid: 9876, signal: "SIGWINCH" },
+        { pid: 9876, signal: "SIGWINCH" },
+        { pid: 9876, signal: "SIGWINCH" },
+      ],
+    );
+  } finally {
+    process.kill = originalKill;
+  }
+});
+
 test("strip replayed device attribute and status queries", () => {
   const replay = "prompt> \u001b[>cprompt redraw\u001b[6n\u001b[18tstill here";
 

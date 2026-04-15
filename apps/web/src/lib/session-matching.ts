@@ -25,6 +25,13 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function buildTmuxPaneBorderNormalizationCommand(
+  tmuxSessionName: string,
+): string {
+  const quotedSessionName = shellQuote(tmuxSessionName);
+  return `tmux set-window-option -t ${quotedSessionName} pane-border-style "fg=#4b5563" && tmux set-window-option -t ${quotedSessionName} pane-active-border-style "fg=#4b5563"`;
+}
+
 export function formatWorkingDirectory(workingDirectory: string): string {
   if (workingDirectory === "~" || workingDirectory === "~/") {
     return "~";
@@ -115,11 +122,14 @@ export function buildTmuxAttachCommand(
   tmuxSessionName: string,
   tmuxPaneId?: string,
 ): string {
+  const normalizePaneBorder =
+    buildTmuxPaneBorderNormalizationCommand(tmuxSessionName);
+
   if (tmuxPaneId) {
-    return `tmux select-pane -t ${shellQuote(tmuxPaneId)} && tmux attach -t ${shellQuote(tmuxSessionName)}`;
+    return `${normalizePaneBorder} && tmux select-pane -t ${shellQuote(tmuxPaneId)} && tmux attach -t ${shellQuote(tmuxSessionName)}`;
   }
 
-  return `tmux attach -t ${shellQuote(tmuxSessionName)}`;
+  return `${normalizePaneBorder} && tmux attach -t ${shellQuote(tmuxSessionName)}`;
 }
 
 export function wrapRemoteInteractiveCommand(command: string): string {
